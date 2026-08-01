@@ -4,7 +4,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "csv-parse/sync";
 import { z } from "zod";
-import { inspectMedia, type MediaInspection } from "./media.js";
+import {
+  inspectMedia,
+  resolveDatasetFile,
+  type MediaInspection,
+} from "./media.js";
 
 const requiredText = z.string().min(1);
 const nullableText = z.preprocess(
@@ -814,7 +818,7 @@ export async function fingerprintDataset(dataset: Dataset): Promise<string> {
   for (const relativePath of files) {
     hash.update(relativePath);
     hash.update("\0");
-    for await (const chunk of createReadStream(path.resolve(dataset.root, relativePath))) {
+    for await (const chunk of createReadStream(resolveDatasetFile(dataset.root, relativePath))) {
       hash.update(chunk as Buffer);
     }
     hash.update("\0");

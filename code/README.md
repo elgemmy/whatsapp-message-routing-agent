@@ -21,7 +21,9 @@ From `code/`:
 ```sh
 npm run typecheck
 npm test
+npm run verify:harness
 npm run validate:data
+npm run validate:output
 npm run eval:seed
 npm run eval:sample-seed
 npm run runs:rebuild
@@ -32,6 +34,20 @@ npm run runs:rebuild
 Open `runs/index.html` in a browser for the generated dashboard. `runs/history.md` and each run's `report.md` provide human-readable alternatives.
 
 `npm run eval:sample-seed` creates `eval-runs/seed-all-wrong` with deliberately incorrect, contract-shaped predictions for the 30 solved examples. Its expected 0/30 action, type, and exact scores prove the evaluator reports failures. It is a harness self-check, never a routing baseline. Open `eval-runs/index.html` for its case-level dashboard.
+
+`npm run verify:harness` is the single clean-check command for the current phase. `npm run validate:output` validates `dataset/output.csv` against the exact headers, target coverage/order, allowed values, and historical-evidence boundary. It intentionally fails while the starter template is blank. Provider integration will add an explicit emit command; until then, the harness cannot honestly claim to produce a submission.
+
+To validate a standalone submission file instead, pass its path explicitly:
+
+```sh
+npm run validate:output -- --input ../output.csv
+```
+
+The required file has exactly 110 prediction rows in target order and this header:
+
+```text
+message_id,action,message_type,reason,confidence,evidence_message_ids
+```
 
 ## Run durability
 

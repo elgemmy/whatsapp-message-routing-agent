@@ -68,6 +68,20 @@ For image and voice-note messages, `images.csv` and `voice_notes.csv` only provi
 4. Write predictions to `output.csv`.
 5. Evaluate your approach on the solved sample rows before submitting.
 
+## Current TypeScript Harness
+
+The runnable harness lives in `code/`. From a clean checkout:
+
+```sh
+cd code
+npm ci
+npm run verify:harness
+npm run eval:seed
+npm run eval:sample-seed
+```
+
+See [`code/README.md`](./code/README.md) for artifact locations and individual commands. The current phase validates data, contracts, resumability, evaluation, and dashboards; it intentionally does not produce semantic judgements yet. Before submission, validate a generated prediction file with `npm run validate:output -- --input ../output.csv`.
+
 You may use any language or runtime. Python, JavaScript, and TypeScript are all reasonable choices.
 
 ---

@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { serializePredictions, validatePredictionSet } from "../src/contract.js";
+import {
+  parsePredictionCsv,
+  serializePredictions,
+  validatePredictionSet,
+} from "../src/contract.js";
 import {
   evaluateSamples,
   createSeedSampleEvaluation,
@@ -25,8 +29,10 @@ function placeholderRows(messageIds: readonly string[]): PredictionRow[] {
   );
 }
 
-test("validates exact target coverage and serializes escaped CSV", async () => {
+test("round-trips hostile CSV text through parsing and full validation", async (t) => {
   const index = await indexPromise;
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-csv-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
   const rows = placeholderRows(index.dataset.messages.map((message) => message.message_id));
   rows[0] = PredictionRowSchema.parse({
     ...rows[0],
@@ -36,6 +42,17 @@ test("validates exact target coverage and serializes escaped CSV", async () => {
   const csv = serializePredictions(rows);
   assert.ok(csv.startsWith("message_id,action,message_type,reason,confidence,evidence_message_ids\n"));
   assert.ok(csv.includes('"Contains a comma, ""quote"", and\na newline."'));
+  const outputPath = path.join(temporaryRoot, "output.csv");
+  await writeFile(outputPath, csv, "utf8");
+  const parsed = validatePredictionSet(index, await parsePredictionCsv(outputPath));
+  assert.deepEqual(parsed, rows);
+
+  await writeFile(
+    outputPath,
+    csv.replace("message_id,action", "action,message_id"),
+    "utf8",
+  );
+  await assert.rejects(parsePredictionCsv(outputPath), /Prediction headers/);
 });
 
 test("rejects missing rows, wrong order, and ineligible evidence", async () => {

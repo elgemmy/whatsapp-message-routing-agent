@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parsePredictionCsv, validatePredictionSet } from "./contract.js";
 import { buildDatasetIndex, fingerprintDataset, loadDataset } from "./data.js";
 import { createSeedSampleEvaluation } from "./evaluate.js";
 import { createSeedFailureRun, rebuildRunHistory } from "./run-history.js";
@@ -53,6 +54,20 @@ async function validateData(): Promise<void> {
         mediaExtensionMismatches: mismatches.length,
         missingBusinessRelationships,
       },
+      null,
+      2,
+    ),
+  );
+}
+
+async function validateOutput(): Promise<void> {
+  const { datasetRoot } = paths();
+  const inputPath = path.resolve(option("--input") ?? path.join(datasetRoot, "output.csv"));
+  const index = await buildDatasetIndex(await loadDataset(datasetRoot));
+  const rows = validatePredictionSet(index, await parsePredictionCsv(inputPath));
+  console.log(
+    JSON.stringify(
+      { status: "valid", inputPath, predictions: rows.length },
       null,
       2,
     ),
@@ -119,6 +134,10 @@ async function main(): Promise<void> {
     await validateData();
     return;
   }
+  if (command === "validate-output") {
+    await validateOutput();
+    return;
+  }
   if (command === "seed") {
     await seed();
     return;
@@ -133,7 +152,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: cli.js <validate-data|seed|eval-sample-seed|rebuild-runs> [--dataset PATH] [--runs PATH] [--eval-runs PATH] [--run-id ID] [--recover-lock] [--retry-failures]",
+    "Usage: cli.js <validate-data|validate-output|seed|eval-sample-seed|rebuild-runs> [--dataset PATH] [--input PATH] [--runs PATH] [--eval-runs PATH] [--run-id ID] [--recover-lock] [--retry-failures]",
   );
 }
 

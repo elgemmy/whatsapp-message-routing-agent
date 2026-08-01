@@ -69,6 +69,22 @@ export function declaredFormatFromPath(filePath: string): MediaFormat {
   }
 }
 
+export function resolveDatasetFile(
+  datasetRoot: string,
+  relativePath: string,
+): string {
+  if (path.isAbsolute(relativePath)) {
+    throw new Error(`Dataset file path must be relative: ${relativePath}`);
+  }
+  const root = path.resolve(datasetRoot);
+  const resolved = path.resolve(root, relativePath);
+  const fromRoot = path.relative(root, resolved);
+  if (fromRoot === "" || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
+    throw new Error(`Dataset file path escapes the dataset root: ${relativePath}`);
+  }
+  return resolved;
+}
+
 function ascii(buffer: Buffer, start: number, end: number): string {
   return buffer.subarray(start, end).toString("ascii");
 }
@@ -126,9 +142,10 @@ export async function inspectMedia(args: {
   const declaredFamily = formatFamily(declaredFormat);
   let detectedFormat: MediaFormat = "unknown";
   let readStatus: MediaInspection["readStatus"] = "readable";
+  const mediaPath = resolveDatasetFile(args.datasetRoot, args.relativePath);
 
   try {
-    const handle = await open(path.resolve(args.datasetRoot, args.relativePath), "r");
+    const handle = await open(mediaPath, "r");
     try {
       const header = Buffer.alloc(64);
       const { bytesRead } = await handle.read(header, 0, header.length, 0);

@@ -7,7 +7,9 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node dist/test/all.test.js",
+    "verify:harness": "npm run typecheck && npm test && npm run validate:data",
     "validate:data": "npm run build && node dist/src/cli.js validate-data",
+    "validate:output": "npm run build && node dist/src/cli.js validate-output",
     "eval:seed": "npm run build && node dist/src/cli.js seed --run-id seed-no-judgement",
     "eval:sample-seed": "npm run build && node dist/src/cli.js eval-sample-seed --run-id seed-all-wrong",
     "runs:rebuild": "npm run build && node dist/src/cli.js rebuild-runs"

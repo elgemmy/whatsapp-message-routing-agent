@@ -31,3 +31,14 @@ Status: accepted; revisit with the media adapter
 - Routing context should combine this signal with file readability, eventual decoder outcome, message content, sender/business identity, and user relationship history.
 - Header recognition is not decoding. Until a real image/audio adapter processes a file, expose `decodeStatus: not_attempted`; later record `succeeded` or `failed` from the adapter without changing the deterministic format evidence.
 - Future work: measure whether mismatch plus other risk signals improves scam classification, and check benign mismatches to prevent false positives.
+
+## 2026-08-01 — First external review triage
+
+Status: accepted
+
+- Claude Fable at maximum effort reviewed committed baseline `31c37a5`; three project agents independently challenged its accuracy, simplicity, and test-harness findings. No reviewer found a blocker to beginning provider/routing work.
+- Harden successful-run output emission now: require a matching dataset fingerprint, a valid journal, terminal success, complete target coverage, and the full output contract. Keep it covered by tests even though no provider-backed successful run exists yet.
+- Add a read-only CLI output validator now. Defer the public emit command and final submission-path mutation until the provider can produce real judgements; require an explicit destination then rather than silently overwriting the dataset template.
+- Constrain media paths lexically to the participant dataset root so CSV-provided absolute or parent-traversal paths cannot read organizer-only files.
+- Cover hostile CSV round trips and compatible/incompatible baseline comparisons before trusting those claims in later runs.
+- Defer confidence rounding, utility consolidation, dashboard expansion, and vocabulary deduplication until provider behavior gives them a concrete consumer or correctness benefit.

@@ -10,7 +10,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { buildDatasetIndex, fingerprintDataset, type DatasetIndex } from "./data.js";
+import { fingerprintDataset, type DatasetIndex } from "./data.js";
 import { decisionToPrediction, DecisionSchema, type Decision } from "./domain.js";
 import { writeValidatedOutput } from "./contract.js";
 
@@ -753,7 +753,18 @@ export async function writeSuccessfulRunOutput(args: {
   index: DatasetIndex;
   runDir: string;
 }): Promise<void> {
-  const cases = foldCases(await readRunEvents(path.join(args.runDir, "events.jsonl")));
+  const manifest = await readManifest(args.runDir);
+  const currentFingerprint = await fingerprintDataset(args.index.dataset);
+  if (manifest.datasetFingerprint !== currentFingerprint) {
+    throw new Error("Cannot emit output: dataset fingerprint changed");
+  }
+  const events = await readRunEvents(path.join(args.runDir, "events.jsonl"));
+  validateJournal(manifest, events);
+  const completion = events.at(-1);
+  if (completion?.type !== "run_completed" || completion.status !== "succeeded") {
+    throw new Error("Cannot emit output: run is not completed successfully");
+  }
+  const cases = foldCases(events);
   const rows = args.index.dataset.messages.map((message) => {
     const event = cases.get(message.message_id);
     if (!event || event.type !== "case_succeeded") {
@@ -766,9 +777,4 @@ export async function writeSuccessfulRunOutput(args: {
     rows,
     outputPath: path.join(args.runDir, "output.csv"),
   });
-}
-
-export async function loadAndIndexDataset(datasetRoot: string): Promise<DatasetIndex> {
-  const { loadDataset } = await import("./data.js");
-  return buildDatasetIndex(await loadDataset(datasetRoot));
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 import {
   buildContext,
@@ -7,7 +8,8 @@ import {
   RequiredNonnegativeIntegerSchema,
 } from "../src/data.js";
 import { normalizeMessageType, normalizeRawDecision } from "../src/domain.js";
-import { indexPromise } from "./helpers.js";
+import { resolveDatasetFile } from "../src/media.js";
+import { datasetRoot, indexPromise } from "./helpers.js";
 
 test("loads and indexes the real participant dataset", async () => {
   const index = await indexPromise;
@@ -84,6 +86,15 @@ test("flags extension mismatches without claiming decoding or semantic risk", as
   assert.equal(wavNamedMp3.extensionMismatch, true);
   assert.equal(wavNamedMp3.familyMismatch, false);
   assert.equal(wavNamedMp3.decodeStatus, "not_attempted");
+});
+
+test("keeps participant media paths inside the dataset root", () => {
+  assert.equal(
+    resolveDatasetFile(datasetRoot, "media/images/example.png"),
+    path.join(datasetRoot, "media/images/example.png"),
+  );
+  assert.throws(() => resolveDatasetFile(datasetRoot, "../organizer/labels.csv"), /escapes/);
+  assert.throws(() => resolveDatasetFile(datasetRoot, "/tmp/labels.csv"), /must be relative/);
 });
 
 test("keeps payment canonical and falls back unknown types to unknown", () => {
