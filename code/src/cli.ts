@@ -9,7 +9,10 @@ import {
   writeSampleRunProgress,
 } from "./evaluate.js";
 import { decisionToPrediction } from "./domain.js";
-import { createOpenRouterRoutingProvider } from "./providers/openrouter.js";
+import {
+  createOpenRouterRoutingProvider,
+  type ReasoningEffort,
+} from "./providers/openrouter.js";
 import { createOpenRouterTranscriptionProvider } from "./providers/openrouter-transcription.js";
 import {
   createOrResumeRun,
@@ -75,6 +78,22 @@ function positiveIntegerOption(name: string): number | undefined {
     throw new Error(`${name} must be a positive integer`);
   }
   return parsed;
+}
+
+function reasoningEffortOption(): ReasoningEffort {
+  const value = option("--reasoning-effort") ?? "max";
+  if (
+    value !== "max" &&
+    value !== "xhigh" &&
+    value !== "high" &&
+    value !== "medium" &&
+    value !== "low" &&
+    value !== "minimal" &&
+    value !== "none"
+  ) {
+    throw new Error("--reasoning-effort must be max, xhigh, high, medium, low, minimal, or none");
+  }
+  return value;
 }
 
 function paths(): { datasetRoot: string; runsDir: string; evalRunsDir: string } {
@@ -208,7 +227,7 @@ async function route(partition: "targets" | "samples"): Promise<void> {
   const provider = createOpenRouterRoutingProvider({
     modelId,
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-    reasoningEffort: "max",
+    reasoningEffort: reasoningEffortOption(),
   });
   const transcriber = createOpenRouterTranscriptionProvider({
     modelId: transcriptionModelId,
@@ -377,7 +396,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: cli.js <validate-data|validate-output|seed|eval-sample-seed|route-targets|route-samples|emit-output|rebuild-runs> [--dataset PATH] [--input PATH] [--output PATH] [--runs PATH] [--eval-runs PATH] [--run-id ID] [--model ID] [--transcription-model ID] [--message-id ID] [--limit N] [--timeout-ms N] [--recover-lock] [--retry-failures]",
+    "Usage: cli.js <validate-data|validate-output|seed|eval-sample-seed|route-targets|route-samples|emit-output|rebuild-runs> [--dataset PATH] [--input PATH] [--output PATH] [--runs PATH] [--eval-runs PATH] [--run-id ID] [--model ID] [--transcription-model ID] [--reasoning-effort EFFORT] [--message-id ID] [--limit N] [--timeout-ms N] [--recover-lock] [--retry-failures]",
   );
 }
 

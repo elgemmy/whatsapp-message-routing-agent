@@ -71,15 +71,17 @@ Voice notes use one bounded OpenRouter speech-to-text call before Luna. The defa
 
 Luna routing uses OpenRouter reasoning effort `max`. Run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. The ceiling was measured rather than guessed: image smokes exhausted 2,000 and then 4,000 tokens with `finishReason=length`; those immutable runs remain available for inspection. Prompt `routing-v2` asks for a complete short reason and allows enough schema headroom to avoid the prior 240-character truncation boundary.
 
+Use `--reasoning-effort high` for a separate measured variant when Max repeatedly exhausts the output budget. Effort is part of manifest identity, so never change it while resuming a run. Max remains the default; this option exists to compare reliability and accuracy without changing models or code.
+
 For a gradual complete-sample run, reuse one run ID so successful calls and transcripts remain resumable:
 
 ```sh
-npm run route:samples -- --run-id luna-max-qwen-stt-v1 --message-id sample_msg_042
-npm run route:samples -- --run-id luna-max-qwen-stt-v1 --retry-failures \
+npm run route:samples -- --run-id luna-max-grok-stt-v1 --message-id sample_msg_042
+npm run route:samples -- --run-id luna-max-grok-stt-v1 --retry-failures \
   --message-id sample_msg_041 --message-id sample_msg_042 \
   --message-id sample_msg_043 --message-id sample_msg_007 \
   --message-id sample_msg_048 --message-id sample_msg_049
-npm run route:samples -- --run-id luna-max-qwen-stt-v1 --retry-failures
+npm run route:samples -- --run-id luna-max-grok-stt-v1 --retry-failures
 ```
 
 When all 30 sample cases succeed, the run directory receives `sample-predictions.csv`, `sample-metrics.json`, and `sample-report.md`. Labels are evaluated only after provider calls have been journaled.

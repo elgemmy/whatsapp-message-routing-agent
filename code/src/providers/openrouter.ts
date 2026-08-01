@@ -144,9 +144,18 @@ export type OpenRouterRoutingProviderOptions = {
   maxRetries?: number;
   temperature?: number;
   maxOutputTokens?: number;
-  reasoningEffort?: "max" | "xhigh" | "high" | "medium" | "low" | "minimal" | "none";
+  reasoningEffort?: ReasoningEffort;
   fetch?: typeof globalThis.fetch;
 };
+
+export type ReasoningEffort =
+  | "max"
+  | "xhigh"
+  | "high"
+  | "medium"
+  | "low"
+  | "minimal"
+  | "none";
 
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
