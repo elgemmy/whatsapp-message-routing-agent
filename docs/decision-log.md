@@ -92,3 +92,13 @@ Status: accepted after format-compatibility probes
 - Preserve Qwen as an explicit `--transcription-model` experiment. Changing the STT model creates a different run manifest; never resume a Qwen run as Grok.
 - Raise Luna's output ceiling from 2,000 to 8,000 for the durable baseline. In the six-case gate, `sample_msg_048` consumed exactly 2,000 output tokens and ended with `finishReason=length`; at 4,000, `sample_msg_048` recovered but `sample_msg_044` reached the ceiling on both its initial call and isolated retry. These are budget failures, not evidence that Luna cannot understand the images. Each bound is manifest-pinned and its run remains inspectable before considering a separate image model.
 - At 8,000 Max-effort tokens, `sample_msg_044` again consumed the entire budget without structured output. Stop doubling the ceiling. Keep Max as the requested default and expose a validated `--reasoning-effort` variant so a separate High-effort manifest can test reliability on the same Luna model before adding an image model.
+
+## 2026-08-02 — Complete Grok STT baseline and Luna effort findings
+
+Status: measured; preserve both variants before prompt iteration
+
+- `luna-high8000-grok-stt-full-1` is the first complete provider-backed sample run: 30/30 technical success, 26/30 action matches, 23/30 message-type matches, and 21/30 exact pairs. Its reported usage is 71,936 input tokens, 8,867 output tokens, 47.92 transcribed audio seconds, and $0.015641 total provider cost.
+- All three voice cases are exact. Grok transcribed both real MP3s and the M4A/AAC file hidden behind an `.mp3` filename; transcripts were journaled before Luna and the format mismatch remained visible as a non-conclusive signal.
+- High-effort image routing is 4/5 exact. The one miss, `sample_msg_044`, correctly recognized an ordinary kurta-set sale but over-prioritized it and called it personal. This is a routing-policy/context error, not a demonstrated image-comprehension failure; do not add Gemini yet.
+- The near-complete 4,000-token Max run produced 29 valid cases with 28 action matches, 22 type matches, and 22 exact pairs, but `sample_msg_044` failed at the ceiling twice and again at an isolated 8,000-token Max probe. Max therefore looks somewhat stronger on action accuracy among successful cases but is not a complete operational baseline.
+- Keep the complete High run and the failed Max runs immutable. The next pass should study the text/type boundary errors and Max reliability before changing the model topology. Any Gemini image experiment must be a separately manifested comparison against the five supplied image cases.
