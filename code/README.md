@@ -1,0 +1,57 @@
+# Message Notification Router Harness
+
+This directory contains the deterministic TypeScript harness for loading the challenge data, validating contracts, recording resumable runs, and inspecting run history. Judgement-provider integration comes after this harness is verified.
+
+## Setup
+
+Requirements: Node.js 20 or newer.
+
+```sh
+cd code
+npm ci
+npm test
+```
+
+No secret is required for the current harness. Future OpenRouter credentials belong in the environment as `OPENROUTER_API_KEY`; `.env` files are ignored.
+
+## Commands
+
+From `code/`:
+
+```sh
+npm run typecheck
+npm test
+npm run validate:data
+npm run eval:seed
+npm run eval:sample-seed
+npm run runs:rebuild
+```
+
+`npm run eval:seed` creates or resumes `runs/seed-no-judgement`. The run deliberately records one retryable `judgement_provider_unavailable` failure for every target message because no judgement provider exists yet. It does not guess labels and does not emit a partial `output.csv`.
+
+Open `runs/index.html` in a browser for the generated dashboard. `runs/history.md` and each run's `report.md` provide human-readable alternatives.
+
+`npm run eval:sample-seed` creates `eval-runs/seed-all-wrong` with deliberately incorrect, contract-shaped predictions for the 30 solved examples. Its expected 0/30 action, type, and exact scores prove the evaluator reports failures. It is a harness self-check, never a routing baseline. Open `eval-runs/index.html` for its case-level dashboard.
+
+## Run durability
+
+Each run uses:
+
+```text
+runs/<run-id>/
+  manifest.json   immutable run and reproducibility metadata
+  events.jsonl    append-only source of truth
+  summary.json    rebuildable projection
+  report.md       rebuildable human-readable report
+```
+
+Complete JSONL events are flushed before processing continues. A truncated final line is removed before a resumed writer appends new events. Resume skips cases that already have an outcome and continues missing cases; `--retry-failures` explicitly reopens a completed run and appends another attempt for failed cases. A run lock prevents concurrent writers; `--recover-lock` is available only for explicit recovery after confirming no writer remains.
+
+Generated summaries, reports, dashboards, and eventual output files are projections. A submission `output.csv` is emitted only when all target messages have valid judgements and the complete output contract passes.
+
+## Evaluation boundaries
+
+- Contract and data-integrity checks are objective.
+- The 30 solved samples are an illustrative regression set, not organizer ground truth or training data.
+- Hidden target action/type quality, reason usefulness, and confidence calibration cannot be measured locally without trusted labels.
+- Media extension mismatches are deterministic context signals, never automatic spam/scam decisions. Header recognition is not decoding; the current harness reports `decodeStatus: not_attempted` honestly.

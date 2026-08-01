@@ -1,0 +1,28 @@
+{
+  "name": "hackerrank-orchestrate-message-router",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node dist/test/all.test.js",
+    "validate:data": "npm run build && node dist/src/cli.js validate-data",
+    "eval:seed": "npm run build && node dist/src/cli.js seed --run-id seed-no-judgement",
+    "eval:sample-seed": "npm run build && node dist/src/cli.js eval-sample-seed --run-id seed-all-wrong",
+    "runs:rebuild": "npm run build && node dist/src/cli.js rebuild-runs"
+  },
+  "dependencies": {
+    "@openrouter/ai-sdk-provider": "3.0.0",
+    "ai": "7.0.47",
+    "csv-parse": "7.0.1",
+    "zod": "4.4.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "typescript": "7.0.2"
+  }
+}
