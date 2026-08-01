@@ -199,7 +199,7 @@ export function createOpenRouterRoutingProvider(
     ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
   });
   const reasoningEffort = options.reasoningEffort ?? "max";
-  const maxOutputTokens = options.maxOutputTokens ?? 2_000;
+  const maxOutputTokens = options.maxOutputTokens ?? 4_000;
   const model = openrouter(modelId, {
     provider: { require_parameters: true },
     usage: { include: true },

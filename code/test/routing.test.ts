@@ -385,10 +385,10 @@ test("OpenRouter routing sends literal Max reasoning through the adapter", async
     evidenceMessageIds: [],
   });
   assert.deepEqual(requestBody?.reasoning, { effort: "max", exclude: true });
-  assert.equal(requestBody?.max_tokens, 2_000);
+  assert.equal(requestBody?.max_tokens, 4_000);
   assert.deepEqual(provider.settings, {
     reasoningEffort: "max",
-    maxOutputTokens: 2_000,
+    maxOutputTokens: 4_000,
     temperature: null,
   });
 });
