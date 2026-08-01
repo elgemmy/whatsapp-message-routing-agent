@@ -153,7 +153,6 @@ export async function buildRoutingMessages(
   }
 
   return [
-    { role: "system", content: ROUTING_SYSTEM_PROMPT },
     { role: "user", content },
   ];
 }

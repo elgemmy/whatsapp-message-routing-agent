@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   APICallError,
   EmptyResponseBodyError,
+  InvalidPromptError,
   NoContentGeneratedError,
   type FilePart,
 } from "ai";
@@ -115,7 +116,9 @@ test("multimodal messages carry safe local bytes with detected MIME type", async
   assert.equal(context.media.extensionMismatch, true);
   assert.equal(context.media.familyMismatch, false);
   const messages = await buildRoutingMessages(context, datasetRoot);
-  const user = messages[1];
+  assert.equal(messages.length, 1);
+  assert.ok(messages.every((message) => message.role !== "system"));
+  const user = messages[0];
   assert.equal(user?.role, "user");
   assert.ok(Array.isArray(user.content));
   const file = user.content.find((part) => part.type === "file") as FilePart | undefined;
@@ -263,5 +266,16 @@ test("provider errors are reduced to stable retry policy without raw payloads", 
   assert.equal(
     classifyOpenRouterError(new EmptyResponseBodyError({})).code,
     "network_error",
+  );
+  assert.deepEqual(
+    classifyOpenRouterError(
+      new InvalidPromptError({ prompt: [], message: "private prompt detail" }),
+    ),
+    {
+      code: "invalid_prompt",
+      message: "The local routing prompt is invalid.",
+      retryable: false,
+      stopRun: true,
+    },
   );
 });

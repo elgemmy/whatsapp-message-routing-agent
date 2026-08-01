@@ -3,6 +3,7 @@ import {
   APICallError,
   EmptyResponseBodyError,
   generateText,
+  InvalidPromptError,
   LoadAPIKeyError,
   NoContentGeneratedError,
   NoObjectGeneratedError,
@@ -16,6 +17,7 @@ import type { RoutingContext } from "../data.js";
 import {
   buildRoutingMessages,
   PROMPT_VERSION,
+  ROUTING_SYSTEM_PROMPT,
   RoutingDecisionOutputSchema,
   validateRoutingDecisionEvidence,
   type RoutingCallMetadata,
@@ -95,6 +97,9 @@ export function classifyOpenRouterError(error: unknown): ClassifiedOpenRouterErr
     TypeValidationError.isInstance(error)
   ) {
     return { code: "invalid_output", message: "The model did not return a valid routing decision.", retryable: true };
+  }
+  if (InvalidPromptError.isInstance(error)) {
+    return { code: "invalid_prompt", message: "The local routing prompt is invalid.", retryable: false, stopRun: true };
   }
   if (EmptyResponseBodyError.isInstance(error)) {
     return { code: "network_error", message: "OpenRouter returned an empty response.", retryable: true, stopRun: true };
@@ -180,6 +185,7 @@ export function createOpenRouterRoutingProvider(
     async judge(context: RoutingContext, datasetRoot: string) {
       const result = await generateText({
         model,
+        instructions: ROUTING_SYSTEM_PROMPT,
         messages: await buildRoutingMessages(context, datasetRoot),
         output: Output.object({
           schema: RoutingDecisionOutputSchema,
