@@ -194,7 +194,7 @@ async function route(partition: "targets" | "samples"): Promise<void> {
   const transcriptionModelId =
     option("--transcription-model") ??
     process.env.OPENROUTER_TRANSCRIPTION_MODEL?.trim() ??
-    "qwen/qwen3-asr-flash-2026-02-10";
+    "x-ai/grok-stt-1.0";
   const runId = requiredRunId();
   const { datasetRoot, runsDir, evalRunsDir } = paths();
   const index = await buildDatasetIndex(await loadDataset(datasetRoot));

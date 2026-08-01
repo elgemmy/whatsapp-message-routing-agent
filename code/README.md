@@ -17,7 +17,7 @@ Copy `.env.example` to `.env` and set your OpenRouter key before live routing. `
 ```text
 OPENROUTER_API_KEY=...
 OPENROUTER_MODEL=openai/gpt-5.6-luna
-OPENROUTER_TRANSCRIPTION_MODEL=qwen/qwen3-asr-flash-2026-02-10
+OPENROUTER_TRANSCRIPTION_MODEL=x-ai/grok-stt-1.0
 ```
 
 The model is configurable and pinned in every run manifest. Confirm its current modalities, structured-output support, and pricing through OpenRouter before a paid run.
@@ -67,7 +67,7 @@ npm run route:samples -- \
 
 This bounded Luna smoke covers text and image cases across all actions, group/business/personal relationships, opt-in and opt-out promotions, scam pressure, a legitimate safety advisory, an unfamiliar sender, and benign extension mismatches. Artifacts live inside `eval-runs/live/<run-id>/`; `sample-progress.md` and `sample-progress.json` compare attempted cases only after inference and keep technical failures separate from semantic accuracy.
 
-Voice notes use one bounded OpenRouter speech-to-text call before Luna. The default is `qwen/qwen3-asr-flash-2026-02-10`; override it with `OPENROUTER_TRANSCRIPTION_MODEL` or `--transcription-model`. The append-only journal records each transcript, detected format, audio hash, model identity, duration, and reported usage before routing, so a Luna retry or resumed run reuses the transcript instead of rebilling STT. Audio bytes are never sent to Luna.
+Voice notes use one bounded OpenRouter speech-to-text call before Luna. The default is `x-ai/grok-stt-1.0`; override it with `OPENROUTER_TRANSCRIPTION_MODEL` or `--transcription-model`. Grok is the complete-sample default because the dataset contains both MP3 and M4A audio: Qwen remains a valid opt-in experiment for supported formats, but its OpenRouter endpoint rejected the sample M4A file. The append-only journal records each transcript, detected format, audio hash, model identity, duration, and reported usage before routing, so a Luna retry or resumed run reuses the transcript instead of rebilling STT. Audio bytes are never sent to Luna.
 
 Luna routing uses OpenRouter reasoning effort `max`. Run manifests bind that setting, the 2,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. Prompt `routing-v2` asks for a complete short reason and allows enough schema headroom to avoid the prior 240-character truncation boundary.
 

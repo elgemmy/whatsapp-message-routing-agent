@@ -81,3 +81,12 @@ Status: accepted for gradual sample evaluation
 - Claude Fable/Max review of `881f4e4` confirmed the main boundaries and led to four pre-smoke corrections: a generic STT 4xx now pauses and remains retryable after correction; AI SDK structured-output failures retain bounded usage when exposed; journal fields distinguish byte-detected format from the format sent to STT; and reports distinguish orchestration attempts from attempts with provider-reported usage.
 - The review's stale-transcript concern does not apply: `fingerprintDataset()` already hashes every referenced image and voice file in addition to participant CSVs, so changed audio bytes reject resume before transcript reuse.
 - Keep the 2,000-token Luna ceiling for the one-voice smoke only. Inspect finish reason and output usage before creating the long-lived full-sample run; raise it under a new manifest identity only if Max reasoning shows real ceiling pressure.
+
+## 2026-08-02 — Grok STT supersedes Qwen for the complete-sample baseline
+
+Status: accepted after format-compatibility probes
+
+- Keep the same single-router architecture and OpenRouter transcription endpoint, but use `x-ai/grok-stt-1.0` as the default STT model. No format router, transcoder, or fallback chain is warranted for the current dataset.
+- Qwen successfully transcribed the two real MP3 samples, but rejected `sample_msg_043`, whose bytes are M4A/AAC despite its `.mp3` filename. The failure is consistent with Qwen3-ASR-Flash's published container list, which omits M4A; a retryable stop preserved the run instead of fabricating a transcript.
+- A bounded Grok probe transcribed the same M4A bytes successfully and Luna then produced the exact expected `mute / spam` classification. xAI documents Grok STT support for both MP3 and M4A, so one Grok configuration covers all supplied voice formats with less code and fewer failure modes.
+- Preserve Qwen as an explicit `--transcription-model` experiment. Changing the STT model creates a different run manifest; never resume a Qwen run as Grok.
