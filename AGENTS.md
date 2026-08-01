@@ -254,3 +254,14 @@ Before responding to any user message, confirm:
 - [ ] I will append a §5.2 entry after this turn.
 - [ ] I will not log secrets.
 - [ ] I will preserve the output contract in §6.
+
+---
+
+## Appendix - User Specific Instructions
+
+- For significant changes/milestones, store meta-data directly inside the commit message, and extract useful snapshots as described in the first handoff
+- When explicitly seeking an external advisor (e.g. Claude), give it the proper context about the project and task, point it to the relevant files to read in the codebase, instructions about how to log the transcript into the log file, and request focused output directly related to the task.
+- Always tend to break down tasks into smaller focused ones (even exploration) and use the orchestration skill in order to manage the team of agents required.
+- Don't assume success, always measure. We're going to build the evals and tests as a first goal in the implementation plan, so for later significant changes, tend to actually run tests and get actual output.
+- As mentioned in the handoff, we'll prefer Vercel AI SDK, with OpenRouter as a provider, and Typescript as implementation language.
+- Don't add unnecessary dependencies unless discusses and explicitly approved.
