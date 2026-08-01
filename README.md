@@ -80,7 +80,7 @@ npm run eval:seed
 npm run eval:sample-seed
 ```
 
-See [`code/README.md`](./code/README.md) for artifact locations and individual commands. The current phase validates data, contracts, resumability, evaluation, and dashboards; it intentionally does not produce semantic judgements yet. Before submission, validate a generated prediction file with `npm run validate:output -- --input ../output.csv`.
+See [`code/README.md`](./code/README.md) for live OpenRouter commands, artifact locations, resumability, explicit submission emission, and validation. Provider runs use Vercel AI SDK structured output behind one injected routing interface; sample labels remain post-inference evaluation data.
 
 You may use any language or runtime. Python, JavaScript, and TypeScript are all reasonable choices.
 

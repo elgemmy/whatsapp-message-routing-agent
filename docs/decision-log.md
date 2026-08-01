@@ -42,3 +42,16 @@ Status: accepted
 - Constrain media paths lexically to the participant dataset root so CSV-provided absolute or parent-traversal paths cannot read organizer-only files.
 - Cover hostile CSV round trips and compatible/incompatible baseline comparisons before trusting those claims in later runs.
 - Defer confidence rounding, utility consolidation, dashboard expansion, and vocabulary deduplication until provider behavior gives them a concrete consumer or correctness benefit.
+
+## 2026-08-01 — OpenRouter structured-routing baseline
+
+Status: accepted; evaluate before expanding target spend
+
+- Use one Vercel AI SDK v7 `generateText` call with `Output.object` per message and the official OpenRouter provider adapter. Keep provider details behind one injected `RoutingProvider`; do not introduce an agent loop, model council, registry, database, or concurrent batch scheduler.
+- Require Node.js 22+, `OPENROUTER_API_KEY`, and an explicitly pinned `OPENROUTER_MODEL`. The initial documented candidate is `google/gemini-2.5-flash`, verified through OpenRouter's current models endpoint as supporting text, image, audio, and structured output; model support and pricing remain runtime facts to recheck.
+- Prompt version `routing-v1` receives a deterministic compact case: at most 12 ranked same-user historical messages and 7 prior notification-load days. Sample label fields, output templates, raw media paths, secrets, and organizer-only data never enter prompts.
+- Send readable image or voice bytes directly in the same bounded routing call using the byte-detected MIME type. Do not add separate OCR or transcription until case-level evaluation demonstrates a need.
+- Normalize unrecognized model message types to `unknown`, preserve the raw value in the journal, and treat invalid actions or invalid/invented evidence as retryable technical failures. Evidence is restricted to the exact prompt shortlist.
+- Generalize the existing append-only runner instead of building a provider-specific run path. Manifests bind provider, exact model, prompt version, partition, dataset fingerprint, and Git state; per-case events retain bounded usage metadata but never prompts or raw provider bodies.
+- Run a small stratified sample smoke first, then all 30 illustrative samples. Evaluate labels only after inference. Start the 110 target run only after sample artifacts are structurally valid and inspected.
+- A successful target run creates its canonical run-local `output.csv`. Publishing to the standalone submission path always requires an explicit CLI destination and revalidates the journal, dataset fingerprint, coverage, evidence, and CSV contract.

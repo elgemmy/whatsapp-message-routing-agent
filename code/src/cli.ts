@@ -3,8 +3,18 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parsePredictionCsv, validatePredictionSet } from "./contract.js";
 import { buildDatasetIndex, fingerprintDataset, loadDataset } from "./data.js";
-import { createSeedSampleEvaluation } from "./evaluate.js";
-import { createSeedFailureRun, rebuildRunHistory } from "./run-history.js";
+import {
+  createSeedSampleEvaluation,
+  writeSampleRunEvaluation,
+} from "./evaluate.js";
+import { createOpenRouterRoutingProvider } from "./providers/openrouter.js";
+import {
+  createOrResumeRun,
+  createSeedFailureRun,
+  readSuccessfulRunPredictions,
+  rebuildRunHistory,
+  writeSuccessfulRunOutput,
+} from "./run-history.js";
 
 const sourceFile = fileURLToPath(import.meta.url);
 const codeRoot = path.resolve(path.dirname(sourceFile), "../..");
@@ -12,11 +22,55 @@ const repoRoot = path.resolve(codeRoot, "..");
 
 function option(name: string): string | undefined {
   const index = process.argv.indexOf(name);
-  return index >= 0 ? process.argv[index + 1] : undefined;
+  if (index < 0) return undefined;
+  const value = process.argv[index + 1];
+  if (value === undefined || value.startsWith("--")) {
+    throw new Error(`${name} requires a value`);
+  }
+  return value;
 }
 
 function hasFlag(name: string): boolean {
   return process.argv.includes(name);
+}
+
+function options(name: string): string[] {
+  return process.argv.flatMap((value, index) => {
+    if (value !== name) return [];
+    const next = process.argv[index + 1];
+    if (next === undefined || next.startsWith("--")) {
+      throw new Error(`${name} requires a value`);
+    }
+    return [next];
+  });
+}
+
+function requiredOption(name: string, environmentName?: string): string {
+  const value = option(name) ?? (environmentName ? process.env[environmentName] : undefined);
+  if (!value?.trim()) {
+    throw new Error(
+      `${name} is required${environmentName ? ` (or set ${environmentName})` : ""}`,
+    );
+  }
+  return value.trim();
+}
+
+function requiredRunId(): string {
+  const runId = requiredOption("--run-id");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runId)) {
+    throw new Error(`Unsafe run ID: ${runId}`);
+  }
+  return runId;
+}
+
+function positiveIntegerOption(name: string): number | undefined {
+  const value = option(name);
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function paths(): { datasetRoot: string; runsDir: string; evalRunsDir: string } {
@@ -128,6 +182,107 @@ async function seedSampleEvaluation(): Promise<void> {
   );
 }
 
+async function route(partition: "targets" | "samples"): Promise<void> {
+  if (!process.env.OPENROUTER_API_KEY?.trim()) {
+    throw new Error("OPENROUTER_API_KEY is required; set it in the environment or code/.env");
+  }
+  const modelId = requiredOption("--model", "OPENROUTER_MODEL");
+  const runId = requiredRunId();
+  const { datasetRoot, runsDir, evalRunsDir } = paths();
+  const index = await buildDatasetIndex(await loadDataset(datasetRoot));
+  const messages =
+    partition === "targets" ? index.dataset.messages : index.dataset.samples;
+  const selectedRunsDir =
+    partition === "targets" ? runsDir : path.join(evalRunsDir, "live");
+  const timeoutMs = positiveIntegerOption("--timeout-ms");
+  const limit = positiveIntegerOption("--limit");
+  const messageIds = options("--message-id");
+  const provider = createOpenRouterRoutingProvider({
+    modelId,
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+  });
+  const summary = await createOrResumeRun({
+    index,
+    messages,
+    runsDir: selectedRunsDir,
+    repoRoot,
+    runId,
+    partition,
+    provider,
+    notes:
+      partition === "targets"
+        ? "OpenRouter structured-routing target run."
+        : "OpenRouter structured-routing illustrative sample run; labels are evaluated only after inference.",
+    recoverLock: hasFlag("--recover-lock"),
+    retryFailures: hasFlag("--retry-failures"),
+    ...(messageIds.length > 0 ? { messageIds } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+  });
+
+  let outputPath: string | null = null;
+  let evaluation: Awaited<ReturnType<typeof writeSampleRunEvaluation>> | null = null;
+  const runDir = path.join(selectedRunsDir, runId);
+  if (summary.status === "succeeded") {
+    if (partition === "targets") {
+      outputPath = path.join(runDir, "output.csv");
+      await writeSuccessfulRunOutput({ index, runDir, outputPath });
+    } else {
+      const predictions = await readSuccessfulRunPredictions({
+        index,
+        runDir,
+        messages,
+      });
+      evaluation = await writeSampleRunEvaluation({
+        samples: index.dataset.samples,
+        predictions,
+        runDir,
+      });
+    }
+  }
+
+  console.log(
+    JSON.stringify(
+      {
+        runId,
+        partition,
+        provider: summary.provider,
+        model: summary.model,
+        promptVersion: summary.promptVersion,
+        status: summary.status,
+        succeeded: summary.succeeded,
+        failed: summary.failed,
+        pending: summary.pending,
+        outputPath,
+        evaluation: evaluation
+          ? {
+              total: evaluation.total,
+              actionCorrect: evaluation.actionCorrect,
+              messageTypeCorrect: evaluation.messageTypeCorrect,
+              exactCorrect: evaluation.exactCorrect,
+            }
+          : null,
+        dashboard: path.join(selectedRunsDir, "index.html"),
+        report: path.join(runDir, "report.md"),
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+async function emitOutput(): Promise<void> {
+  const runId = requiredRunId();
+  const outputPath = path.resolve(requiredOption("--output"));
+  const { datasetRoot, runsDir } = paths();
+  const index = await buildDatasetIndex(await loadDataset(datasetRoot));
+  await writeSuccessfulRunOutput({
+    index,
+    runDir: path.join(runsDir, runId),
+    outputPath,
+  });
+  console.log(JSON.stringify({ status: "valid", runId, outputPath }, null, 2));
+}
+
 async function main(): Promise<void> {
   const command = process.argv[2];
   if (command === "validate-data") {
@@ -146,13 +301,25 @@ async function main(): Promise<void> {
     await seedSampleEvaluation();
     return;
   }
+  if (command === "route-targets") {
+    await route("targets");
+    return;
+  }
+  if (command === "route-samples") {
+    await route("samples");
+    return;
+  }
+  if (command === "emit-output") {
+    await emitOutput();
+    return;
+  }
   if (command === "rebuild-runs") {
     const summaries = await rebuildRunHistory(paths().runsDir);
     console.log(`Rebuilt ${summaries.length} run(s).`);
     return;
   }
   throw new Error(
-    "Usage: cli.js <validate-data|validate-output|seed|eval-sample-seed|rebuild-runs> [--dataset PATH] [--input PATH] [--runs PATH] [--eval-runs PATH] [--run-id ID] [--recover-lock] [--retry-failures]",
+    "Usage: cli.js <validate-data|validate-output|seed|eval-sample-seed|route-targets|route-samples|emit-output|rebuild-runs> [--dataset PATH] [--input PATH] [--output PATH] [--runs PATH] [--eval-runs PATH] [--run-id ID] [--model ID] [--message-id ID] [--limit N] [--timeout-ms N] [--recover-lock] [--retry-failures]",
   );
 }
 

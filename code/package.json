@@ -10,6 +10,9 @@
     "verify:harness": "npm run typecheck && npm test && npm run validate:data",
     "validate:data": "npm run build && node dist/src/cli.js validate-data",
     "validate:output": "npm run build && node dist/src/cli.js validate-output",
+    "route": "npm run build && node --env-file-if-exists=.env dist/src/cli.js route-targets",
+    "route:samples": "npm run build && node --env-file-if-exists=.env dist/src/cli.js route-samples",
+    "output:emit": "npm run build && node dist/src/cli.js emit-output",
     "eval:seed": "npm run build && node dist/src/cli.js seed --run-id seed-no-judgement",
     "eval:sample-seed": "npm run build && node dist/src/cli.js eval-sample-seed --run-id seed-all-wrong",
     "runs:rebuild": "npm run build && node dist/src/cli.js rebuild-runs"
@@ -21,7 +24,7 @@
     "zod": "4.4.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "devDependencies": {
     "@types/node": "26.1.2",

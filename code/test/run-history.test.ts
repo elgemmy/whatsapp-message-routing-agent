@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  createOrResumeRun,
   createSeedFailureRun,
   readRunEvents,
   repairTruncatedRunJournal,
@@ -19,6 +20,11 @@ import {
   writeSuccessfulRunOutput,
 } from "../src/run-history.js";
 import { parsePredictionCsv, validatePredictionSet } from "../src/contract.js";
+import {
+  PROMPT_VERSION,
+  type RoutingProvider,
+  validateRoutingDecisionEvidence,
+} from "../src/routing.js";
 import { indexPromise, repoRoot } from "./helpers.js";
 
 test("seeded run records 110 honest failures and resumes without duplication", async (t) => {
@@ -58,9 +64,24 @@ test("seeded run records 110 honest failures and resumes without duplication", a
   assert.match(dashboard, /Message Router Run History/);
   assert.match(dashboard, /judgement_provider_unavailable/);
 
+  const manifestPath = path.join(temporaryRoot, "seed-test", "manifest.json");
+  const legacyManifest = JSON.parse(
+    await readFile(manifestPath, "utf8"),
+  ) as Record<string, unknown>;
+  legacyManifest.schemaVersion = 1;
+  delete legacyManifest.promptVersion;
+  delete legacyManifest.partition;
+  await writeFile(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`, "utf8");
+
   await createSeedFailureRun(args);
   assert.equal((await readRunEvents(eventsPath)).length, firstEvents.length);
   assert.equal((await rebuildRunHistory(temporaryRoot)).length, 1);
+  assert.equal(
+    (JSON.parse(await readFile(manifestPath, "utf8")) as { schemaVersion: number })
+      .schemaVersion,
+    1,
+    "legacy manifests are normalized in memory, not rewritten",
+  );
 
   await createSeedFailureRun({ ...args, retryFailures: true });
   const retriedEvents = await readRunEvents(eventsPath);
@@ -136,6 +157,8 @@ test("emits output only from a valid successful run on the current dataset", asy
           confidence: 0,
           evidenceMessageIds: [],
         },
+        rawMessageType: "unknown",
+        usedUnknownFallback: false,
       };
     }
     return event.type === "run_completed" ? { ...event, status: "succeeded" } : event;
@@ -238,4 +261,258 @@ test("compares compatible baselines and explains fingerprint mismatches", async 
     rebuiltCurrent.comparisonUnavailableReason,
     "baseline_dataset_fingerprint_mismatch",
   );
+});
+
+test("provider runs resume safely and retry only retryable invalid decisions", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-provider-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const index = await indexPromise;
+  const firstMessageId = index.dataset.messages[0]?.message_id as string;
+  let repaired = false;
+  let calls = 0;
+  const provider: RoutingProvider = {
+    provider: "fake",
+    model: "fake/structured",
+    promptVersion: PROMPT_VERSION,
+    validateDecision: validateRoutingDecisionEvidence,
+    classifyError() {
+      return { code: "fake_failure", message: "Fake provider failure.", retryable: true };
+    },
+    async judge(context) {
+      calls += 1;
+      if (context.target.message_id === firstMessageId && !repaired) {
+        return {
+          rawDecision: {
+            action: "invalid_action",
+            messageType: "urgent",
+            reason: "Invalid fixture.",
+            confidence: 0.5,
+            evidenceMessageIds: [],
+          },
+        };
+      }
+      return {
+        rawDecision: {
+          action: "digest",
+          messageType:
+            context.target.message_id === firstMessageId
+              ? "future_hidden_label"
+              : "unknown",
+          reason: "Deterministic fake-provider fixture.",
+          confidence: 0.5,
+          evidenceMessageIds: [],
+        },
+        metadata: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      };
+    },
+  };
+  const args = {
+    index,
+    messages: index.dataset.messages,
+    runsDir: temporaryRoot,
+    repoRoot,
+    runId: "fake-provider",
+    partition: "targets" as const,
+    provider,
+    notes: "Provider-run integration fixture.",
+  };
+
+  const first = await createOrResumeRun(args);
+  assert.equal(first.status, "failed");
+  assert.equal(first.succeeded, 109);
+  assert.equal(first.failed, 1);
+  assert.equal(calls, 110);
+  const runDir = path.join(temporaryRoot, "fake-provider");
+  await assert.rejects(access(path.join(runDir, "output.csv")));
+  const failed = (await readRunEvents(path.join(runDir, "events.jsonl"))).find(
+    (event) => event.type === "case_failed" && event.messageId === firstMessageId,
+  );
+  assert.equal(failed?.type, "case_failed");
+  if (failed?.type === "case_failed") {
+    assert.equal(failed.error.code, "invalid_decision");
+    assert.equal(failed.retryable, true);
+  }
+
+  calls = 0;
+  await createOrResumeRun(args);
+  assert.equal(calls, 0, "ordinary resume must not rebill recorded outcomes");
+
+  repaired = true;
+  const completed = await createOrResumeRun({ ...args, retryFailures: true });
+  assert.equal(calls, 1);
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.succeeded, 110);
+  assert.equal(completed.failed, 0);
+  const events = await readRunEvents(path.join(runDir, "events.jsonl"));
+  const retried = events.find(
+    (event) =>
+      event.type === "case_succeeded" &&
+      event.messageId === firstMessageId &&
+      event.attempt === 2,
+  );
+  assert.equal(retried?.type, "case_succeeded");
+  if (retried?.type === "case_succeeded") {
+    assert.equal(retried.decision.messageType, "unknown");
+    assert.equal(retried.rawMessageType, "future_hidden_label");
+    assert.equal(retried.usedUnknownFallback, true);
+  }
+
+  await writeSuccessfulRunOutput({ index, runDir });
+  assert.equal(
+    validatePredictionSet(
+      index,
+      await parsePredictionCsv(path.join(runDir, "output.csv")),
+    ).length,
+    110,
+  );
+
+  await assert.rejects(
+    createOrResumeRun({
+      ...args,
+      provider: { ...provider, model: "fake/changed" },
+    }),
+    /provider configuration changed/,
+  );
+});
+
+test("terminal provider failures are never retried", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-terminal-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const index = await indexPromise;
+  let calls = 0;
+  const provider: RoutingProvider = {
+    provider: "fake",
+    model: "fake/terminal",
+    promptVersion: PROMPT_VERSION,
+    validateDecision: validateRoutingDecisionEvidence,
+    classifyError() {
+      return { code: "authentication_failed", message: "Authentication failed.", retryable: false };
+    },
+    async judge() {
+      calls += 1;
+      throw new Error("private provider detail");
+    },
+  };
+  const args = {
+    index,
+    messages: index.dataset.messages.slice(0, 1),
+    runsDir: temporaryRoot,
+    repoRoot,
+    runId: "terminal-provider",
+    partition: "targets" as const,
+    provider,
+    notes: "Terminal failure fixture.",
+  };
+  await createOrResumeRun(args);
+  assert.equal(calls, 1);
+  calls = 0;
+  const retried = await createOrResumeRun({ ...args, retryFailures: true });
+  assert.equal(calls, 0);
+  assert.equal(retried.status, "failed");
+  const events = await readRunEvents(
+    path.join(temporaryRoot, "terminal-provider", "events.jsonl"),
+  );
+  assert.equal(events.filter((event) => event.type === "case_failed").length, 1);
+});
+
+test("batch-pausing failures require an explicit retry before pending calls continue", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-paused-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const index = await indexPromise;
+  let fixed = false;
+  let calls = 0;
+  const provider: RoutingProvider = {
+    provider: "fake",
+    model: "fake/paused",
+    promptVersion: PROMPT_VERSION,
+    validateDecision: validateRoutingDecisionEvidence,
+    classifyError() {
+      return {
+        code: "network_error",
+        message: "Temporary transport failure.",
+        retryable: true,
+        stopRun: true,
+      };
+    },
+    async judge() {
+      calls += 1;
+      if (!fixed) throw new Error("private transport detail");
+      return {
+        rawDecision: {
+          action: "digest",
+          messageType: "unknown",
+          reason: "Recovered fake-provider fixture.",
+          confidence: 0.5,
+          evidenceMessageIds: [],
+        },
+      };
+    },
+  };
+  const args = {
+    index,
+    messages: index.dataset.messages.slice(0, 2),
+    runsDir: temporaryRoot,
+    repoRoot,
+    runId: "paused-provider",
+    partition: "targets" as const,
+    provider,
+    notes: "Paused failure fixture.",
+  };
+  const paused = await createOrResumeRun(args);
+  assert.equal(calls, 1);
+  assert.equal(paused.status, "in_progress");
+  assert.equal(paused.failed, 1);
+  assert.equal(paused.pending, 1);
+  await assert.rejects(createOrResumeRun(args), /use --retry-failures/);
+  assert.equal(calls, 1);
+
+  fixed = true;
+  const completed = await createOrResumeRun({ ...args, retryFailures: true });
+  assert.equal(calls, 3);
+  assert.equal(completed.status, "succeeded");
+  assert.equal(completed.succeeded, 2);
+});
+
+test("nonretryable batch stops never advance pending cases", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-stopped-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const index = await indexPromise;
+  let calls = 0;
+  const provider: RoutingProvider = {
+    provider: "fake",
+    model: "fake/invalid",
+    promptVersion: PROMPT_VERSION,
+    validateDecision: validateRoutingDecisionEvidence,
+    classifyError() {
+      return {
+        code: "invalid_model",
+        message: "The model is invalid.",
+        retryable: false,
+        stopRun: true,
+      };
+    },
+    async judge() {
+      calls += 1;
+      throw new Error("private provider detail");
+    },
+  };
+  const args = {
+    index,
+    messages: index.dataset.messages.slice(0, 2),
+    runsDir: temporaryRoot,
+    repoRoot,
+    runId: "stopped-provider",
+    partition: "targets" as const,
+    provider,
+    notes: "Nonretryable stop fixture.",
+  };
+  const stopped = await createOrResumeRun(args);
+  assert.equal(stopped.status, "in_progress");
+  assert.equal(calls, 1);
+  await assert.rejects(createOrResumeRun(args), /create a new run/);
+  await assert.rejects(
+    createOrResumeRun({ ...args, retryFailures: true }),
+    /create a new run/,
+  );
+  assert.equal(calls, 1);
 });

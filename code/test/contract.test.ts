@@ -12,6 +12,7 @@ import {
   evaluateSamples,
   createSeedSampleEvaluation,
   makeDeliberatelyWrongSamplePredictions,
+  writeSampleRunEvaluation,
 } from "../src/evaluate.js";
 import { PredictionRowSchema, type PredictionRow } from "../src/domain.js";
 import { indexPromise } from "./helpers.js";
@@ -113,4 +114,23 @@ test("persists the all-wrong sample evaluator seed and readable history", async 
   await access(path.join(temporaryRoot, "seed-all-wrong", "predictions.csv"));
   assert.match(await readFile(path.join(temporaryRoot, "history.md"), "utf8"), /0\/30/);
   assert.match(await readFile(path.join(temporaryRoot, "index.html"), "utf8"), /seed-all-wrong/);
+});
+
+test("writes post-inference sample metrics beside a provider run", async (t) => {
+  const index = await indexPromise;
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-live-eval-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const predictions = makeDeliberatelyWrongSamplePredictions(index.dataset.samples);
+  const evaluation = await writeSampleRunEvaluation({
+    samples: index.dataset.samples,
+    predictions,
+    runDir: temporaryRoot,
+  });
+  assert.equal(evaluation.exactCorrect, 0);
+  await access(path.join(temporaryRoot, "sample-predictions.csv"));
+  await access(path.join(temporaryRoot, "sample-metrics.json"));
+  assert.match(
+    await readFile(path.join(temporaryRoot, "sample-report.md"), "utf8"),
+    /labels were not included in provider prompts/,
+  );
 });

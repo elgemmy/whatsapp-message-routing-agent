@@ -277,3 +277,44 @@ export async function createSeedSampleEvaluation(args: {
   await rebuildEvaluationHistory(evalRunsDir);
   return evaluation;
 }
+
+export async function writeSampleRunEvaluation(args: {
+  samples: readonly SampleMessage[];
+  predictions: readonly PredictionRow[];
+  runDir: string;
+}): Promise<SampleEvaluation> {
+  const evaluation = evaluateSamples(args.samples, args.predictions);
+  const runDir = path.resolve(args.runDir);
+  await mkdir(runDir, { recursive: true });
+  await atomicWrite(
+    path.join(runDir, "sample-predictions.csv"),
+    serializePredictions(args.predictions),
+  );
+  await atomicWrite(
+    path.join(runDir, "sample-metrics.json"),
+    `${JSON.stringify(evaluation, null, 2)}\n`,
+  );
+  const caseRows = evaluation.cases
+    .map(
+      (item) =>
+        `| ${escapeMarkdown(item.messageId)} | ${item.modality} | ${item.expectedAction} | ${item.predictedAction} | ${item.expectedMessageType} | ${item.predictedMessageType} | ${item.exactCorrect ? "pass" : "fail"} |`,
+    )
+    .join("\n");
+  await atomicWrite(
+    path.join(runDir, "sample-report.md"),
+    `# Provider sample evaluation
+
+This is an **illustrative sample regression**, evaluated only after inference. Sample labels were not included in provider prompts.
+
+- Cases: ${evaluation.total}
+- Action correct: ${evaluation.actionCorrect}/${evaluation.total}
+- Message type correct: ${evaluation.messageTypeCorrect}/${evaluation.total}
+- Exact action + type: ${evaluation.exactCorrect}/${evaluation.total}
+
+| Message | Modality | Expected action | Predicted action | Expected type | Predicted type | Exact |
+| --- | --- | --- | --- | --- | --- | --- |
+${caseRows}
+`,
+  );
+  return evaluation;
+}

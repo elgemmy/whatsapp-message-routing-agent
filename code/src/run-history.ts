@@ -10,14 +10,26 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { fingerprintDataset, type DatasetIndex } from "./data.js";
-import { decisionToPrediction, DecisionSchema, type Decision } from "./domain.js";
+import {
+  buildContext,
+  fingerprintDataset,
+  type DatasetIndex,
+  type Message,
+} from "./data.js";
+import {
+  decisionToPrediction,
+  DecisionSchema,
+  normalizeRawDecision,
+  type Decision,
+  type PredictionRow,
+} from "./domain.js";
 import { writeValidatedOutput } from "./contract.js";
+import type { RoutingCallMetadata, RoutingProvider } from "./routing.js";
 
 const ModalitySchema = z.enum(["text", "image", "voice"]);
 type Modality = z.infer<typeof ModalitySchema>;
 
-const RunManifestSchema = z
+const RunManifestV1Schema = z
   .object({
     schemaVersion: z.literal(1),
     runId: z.string().min(1),
@@ -39,7 +51,14 @@ const RunManifestSchema = z
   })
   .strict();
 
-export type RunManifest = z.infer<typeof RunManifestSchema>;
+const RunManifestV2Schema = RunManifestV1Schema.omit({ schemaVersion: true }).extend({
+  schemaVersion: z.literal(2),
+  promptVersion: z.string().min(1),
+  partition: z.enum(["targets", "samples"]),
+}).strict();
+
+const StoredRunManifestSchema = z.union([RunManifestV1Schema, RunManifestV2Schema]);
+export type RunManifest = z.infer<typeof RunManifestV2Schema>;
 
 const RunStartedEventSchema = z
   .object({
@@ -65,6 +84,7 @@ const CaseFailedEventSchema = z
     modality: ModalitySchema,
     attempt: z.number().int().positive(),
     retryable: z.boolean(),
+    stopsRun: z.boolean().optional(),
     error: z
       .object({ code: z.string().min(1), message: z.string().min(1) })
       .strict(),
@@ -80,6 +100,22 @@ const CaseSucceededEventSchema = z
     attempt: z.number().int().positive(),
     durationMs: z.number().int().nonnegative(),
     decision: DecisionSchema,
+    rawMessageType: z.string(),
+    usedUnknownFallback: z.boolean(),
+    metadata: z
+      .object({
+        responseId: z.string().optional(),
+        finishReason: z.string().optional(),
+        rawFinishReason: z.string().optional(),
+        inputTokens: z.number().int().nonnegative().optional(),
+        outputTokens: z.number().int().nonnegative().optional(),
+        totalTokens: z.number().int().nonnegative().optional(),
+        costUsd: z.number().nonnegative().optional(),
+        routedProvider: z.string().optional(),
+        warnings: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const RunCompletedEventSchema = z
@@ -110,6 +146,8 @@ export type RunSummary = {
   datasetFingerprint: string;
   provider: string;
   model: string;
+  promptVersion: string;
+  partition: "targets" | "samples";
   baselineRunId: string | null;
   notes: string;
   total: number;
@@ -120,6 +158,12 @@ export type RunSummary = {
   actions: Record<string, number>;
   messageTypes: Record<string, number>;
   failureCodes: Record<string, number>;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    costUsd: number;
+  };
   comparison: null | {
     baselineRunId: string;
     compared: number;
@@ -220,9 +264,17 @@ function foldCases(events: readonly RunEvent[]): Map<string, CaseEvent> {
 }
 
 async function readManifest(runDir: string): Promise<RunManifest> {
-  return RunManifestSchema.parse(
+  const stored = StoredRunManifestSchema.parse(
     JSON.parse(await readFile(path.join(runDir, "manifest.json"), "utf8")),
   );
+  return stored.schemaVersion === 2
+    ? stored
+    : {
+        ...stored,
+        schemaVersion: 2,
+        promptVersion: "no-judgement-v1",
+        partition: "targets",
+      };
 }
 
 async function runDirectories(runsDir: string): Promise<string[]> {
@@ -300,17 +352,34 @@ async function acquireLock(runDir: string, recoverLock: boolean): Promise<() => 
   };
 }
 
-export async function createSeedFailureRun(args: {
+export async function createOrResumeRun(args: {
   index: DatasetIndex;
+  messages: readonly Message[];
   runsDir: string;
   repoRoot: string;
   runId: string;
+  partition: "targets" | "samples";
+  provider: RoutingProvider;
+  notes: string;
   recoverLock?: boolean;
   retryFailures?: boolean;
+  messageIds?: readonly string[];
+  limit?: number;
 }): Promise<RunSummary> {
   const runId = safeRunId(args.runId);
   const runsDir = path.resolve(args.runsDir);
   const runDir = path.join(runsDir, runId);
+  if (args.limit !== undefined && (!Number.isInteger(args.limit) || args.limit < 1)) {
+    throw new Error("Run limit must be a positive integer");
+  }
+  const messageById = new Map(args.messages.map((message) => [message.message_id, message]));
+  if (messageById.size !== args.messages.length) {
+    throw new Error("Run messages contain duplicate IDs");
+  }
+  const selectedIds = args.messageIds ? new Set(args.messageIds) : null;
+  for (const messageId of selectedIds ?? []) {
+    if (!messageById.has(messageId)) throw new Error(`Unknown selected message: ${messageId}`);
+  }
   await mkdir(runDir, { recursive: true });
   const releaseLock = await acquireLock(runDir, args.recoverLock ?? false);
 
@@ -323,8 +392,20 @@ export async function createSeedFailureRun(args: {
       if (manifest.datasetFingerprint !== fingerprint) {
         throw new Error(`Cannot resume ${runId}: dataset fingerprint changed`);
       }
-      if (manifest.provider !== "none" || manifest.model !== "none") {
-        throw new Error(`Cannot seed ${runId}: it belongs to another provider/model`);
+      if (
+        manifest.provider !== args.provider.provider ||
+        manifest.model !== args.provider.model ||
+        manifest.promptVersion !== args.provider.promptVersion ||
+        manifest.partition !== args.partition
+      ) {
+        throw new Error(`Cannot resume ${runId}: provider configuration changed`);
+      }
+      const expectedTargets = args.messages.map((message) => ({
+        messageId: message.message_id,
+        modality: modalityFor(message.media_type),
+      }));
+      if (JSON.stringify(manifest.targets) !== JSON.stringify(expectedTargets)) {
+        throw new Error(`Cannot resume ${runId}: target partition changed`);
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -337,26 +418,28 @@ export async function createSeedFailureRun(args: {
       const git = gitMetadata(args.repoRoot);
       const baselineRunId = await latestRunId(runsDir);
       const modalityCounts = { text: 0, image: 0, voice: 0 };
-      for (const message of args.index.dataset.messages) {
+      for (const message of args.messages) {
         modalityCounts[modalityFor(message.media_type)] += 1;
       }
-      manifest = RunManifestSchema.parse({
-        schemaVersion: 1,
+      manifest = RunManifestV2Schema.parse({
+        schemaVersion: 2,
         runId,
         createdAt: now(),
         gitSha: git.sha,
         gitDirty: git.dirty,
         datasetFingerprint: fingerprint,
-        targetCount: args.index.dataset.messages.length,
+        targetCount: args.messages.length,
         modalityCounts,
-        targets: args.index.dataset.messages.map((message) => ({
+        targets: args.messages.map((message) => ({
           messageId: message.message_id,
           modality: modalityFor(message.media_type),
         })),
-        provider: "none",
-        model: "none",
+        provider: args.provider.provider,
+        model: args.provider.model,
+        promptVersion: args.provider.promptVersion,
+        partition: args.partition,
         baselineRunId,
-        notes: "Seeded harness run: no judgement provider is configured.",
+        notes: args.notes,
       });
       await atomicWrite(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     }
@@ -375,6 +458,19 @@ export async function createSeedFailureRun(args: {
 
     const eventsAfterStart = await readRunEvents(eventsPath);
     const wasCompleted = eventsAfterStart.at(-1)?.type === "run_completed";
+    const lastEvent = eventsAfterStart.at(-1);
+    if (lastEvent?.type === "case_failed" && lastEvent.stopsRun) {
+      if (!lastEvent.retryable) {
+        throw new Error(
+          `Run ${runId} stopped after nonretryable ${lastEvent.error.code}; create a new run`,
+        );
+      }
+      if (!args.retryFailures) {
+        throw new Error(
+          `Run ${runId} paused after ${lastEvent.error.code}; fix the cause and use --retry-failures`,
+        );
+      }
+    }
     if (wasCompleted && args.retryFailures) {
       await appendEvent(eventsPath, {
         type: "run_resumed",
@@ -385,32 +481,78 @@ export async function createSeedFailureRun(args: {
     }
 
     const completedCases = foldCases(await readRunEvents(eventsPath));
-    for (const message of args.index.dataset.messages) {
+    let processed = 0;
+    for (const message of args.messages) {
+      if (selectedIds && !selectedIds.has(message.message_id)) continue;
       const previous = completedCases.get(message.message_id);
       if (previous?.type === "case_succeeded") continue;
-      if (previous?.type === "case_failed" && !args.retryFailures) continue;
-      await appendEvent(eventsPath, {
-        type: "case_failed",
-        sequence: (sequence += 1),
-        timestamp: now(),
-        messageId: message.message_id,
-        modality: modalityFor(message.media_type),
-        attempt: (previous?.attempt ?? 0) + 1,
-        retryable: true,
-        error: {
-          code: "judgement_provider_unavailable",
-          message: "No judgement provider was configured for this seeded run.",
-        },
-      });
+      if (previous?.type === "case_failed") {
+        if (!args.retryFailures || !previous.retryable) continue;
+      }
+      if (args.limit !== undefined && processed >= args.limit) break;
+      processed += 1;
+      const context = buildContext(args.index, message);
+      const startedAt = performance.now();
+      try {
+        const result = await args.provider.judge(context, args.index.dataset.root);
+        let normalized: ReturnType<typeof normalizeRawDecision>;
+        try {
+          normalized = normalizeRawDecision(result.rawDecision);
+          args.provider.validateDecision(context, normalized.decision);
+        } catch {
+          throw {
+            routingValidationFailure: true,
+          };
+        }
+        await appendEvent(eventsPath, {
+          type: "case_succeeded",
+          sequence: (sequence += 1),
+          timestamp: now(),
+          messageId: message.message_id,
+          modality: modalityFor(message.media_type),
+          attempt: (previous?.attempt ?? 0) + 1,
+          durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+          decision: normalized.decision,
+          rawMessageType: normalized.rawMessageType,
+          usedUnknownFallback: normalized.usedUnknownFallback,
+          ...(result.metadata ? { metadata: result.metadata } : {}),
+        });
+      } catch (error) {
+        const failure =
+          typeof error === "object" &&
+          error !== null &&
+          "routingValidationFailure" in error
+            ? {
+                code: "invalid_decision",
+                message: "The model returned a decision that failed local validation.",
+                retryable: true,
+              }
+            : args.provider.classifyError(error);
+        await appendEvent(eventsPath, {
+          type: "case_failed",
+          sequence: (sequence += 1),
+          timestamp: now(),
+          messageId: message.message_id,
+          modality: modalityFor(message.media_type),
+          attempt: (previous?.attempt ?? 0) + 1,
+          retryable: failure.retryable,
+          ...(failure.stopRun ? { stopsRun: true } : {}),
+          error: { code: failure.code, message: failure.message },
+        });
+        if (failure.stopRun) break;
+      }
     }
 
-    const latestEvents = await readRunEvents(eventsPath);
-    if (!wasCompleted || args.retryFailures) {
+    const currentCases = foldCases(await readRunEvents(eventsPath));
+    if (currentCases.size === args.messages.length && (!wasCompleted || args.retryFailures)) {
+      const hasFailures = [...currentCases.values()].some(
+        (event) => event.type === "case_failed",
+      );
       await appendEvent(eventsPath, {
         type: "run_completed",
         sequence: (sequence += 1),
         timestamp: now(),
-        status: "failed",
+        status: hasFailures ? "failed" : "succeeded",
       });
     }
   } finally {
@@ -421,6 +563,39 @@ export async function createSeedFailureRun(args: {
   return JSON.parse(
     await readFile(path.join(runDir, "summary.json"), "utf8"),
   ) as RunSummary;
+}
+
+export async function createSeedFailureRun(args: {
+  index: DatasetIndex;
+  runsDir: string;
+  repoRoot: string;
+  runId: string;
+  recoverLock?: boolean;
+  retryFailures?: boolean;
+}): Promise<RunSummary> {
+  const provider: RoutingProvider = {
+    provider: "none",
+    model: "none",
+    promptVersion: "no-judgement-v1",
+    async judge() {
+      throw new Error("No judgement provider was configured for this seeded run.");
+    },
+    classifyError() {
+      return {
+        code: "judgement_provider_unavailable",
+        message: "No judgement provider was configured for this seeded run.",
+        retryable: true,
+      };
+    },
+    validateDecision() {},
+  };
+  return createOrResumeRun({
+    ...args,
+    messages: args.index.dataset.messages,
+    partition: "targets",
+    provider,
+    notes: "Seeded harness run: no judgement provider is configured.",
+  });
 }
 
 function increment(record: Record<string, number>, key: string): void {
@@ -545,6 +720,7 @@ async function buildSummary(
   const actions: Record<string, number> = {};
   const messageTypes: Record<string, number> = {};
   const failureCodes: Record<string, number> = {};
+  const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
   let succeeded = 0;
   let failed = 0;
   for (const event of cases.values()) {
@@ -553,6 +729,10 @@ async function buildSummary(
       byModality[event.modality].succeeded += 1;
       increment(actions, event.decision.action);
       increment(messageTypes, event.decision.messageType);
+      usage.inputTokens += event.metadata?.inputTokens ?? 0;
+      usage.outputTokens += event.metadata?.outputTokens ?? 0;
+      usage.totalTokens += event.metadata?.totalTokens ?? 0;
+      usage.costUsd += event.metadata?.costUsd ?? 0;
     } else {
       failed += 1;
       byModality[event.modality].failed += 1;
@@ -576,6 +756,8 @@ async function buildSummary(
     datasetFingerprint: manifest.datasetFingerprint,
     provider: manifest.provider,
     model: manifest.model,
+    promptVersion: manifest.promptVersion,
+    partition: manifest.partition,
     baselineRunId: manifest.baselineRunId,
     notes: manifest.notes,
     total: manifest.targetCount,
@@ -586,6 +768,7 @@ async function buildSummary(
     actions,
     messageTypes,
     failureCodes,
+    usage,
     comparison: compareCases(manifest.baselineRunId, cases, baselineCases),
     comparisonUnavailableReason,
   };
@@ -613,6 +796,7 @@ function renderReport(summary: RunSummary): string {
 
 - Status: **${summary.status}**
 - Provider/model: \`${summary.provider}\` / \`${summary.model}\`
+- Prompt/partition: \`${summary.promptVersion}\` / \`${summary.partition}\`
 - Git: \`${summary.gitSha}${summary.gitDirty ? " (dirty)" : ""}\`
 - Dataset: \`${summary.datasetFingerprint}\`
 - Baseline: ${summary.baselineRunId ? `\`${summary.baselineRunId}\`` : "none"}
@@ -625,6 +809,7 @@ ${summary.notes}
 - Succeeded: ${summary.succeeded}
 - Failed: ${summary.failed}
 - Pending: ${summary.pending}
+- Usage: ${summary.usage.inputTokens} input / ${summary.usage.outputTokens} output tokens${summary.usage.costUsd > 0 ? ` / $${summary.usage.costUsd.toFixed(6)}` : ""}
 
 ${markdownTable([["Modality", "Total", "Succeeded", "Failed"], ...modalityRows])}
 
@@ -652,6 +837,8 @@ function htmlEscape(value: unknown): string {
 function renderDashboard(
   runs: Array<{ summary: RunSummary; cases: Map<string, CaseEvent> }>,
 ): string {
+  const sampleHistory =
+    runs.length > 0 && runs.every(({ summary }) => summary.partition === "samples");
   const historyRows = runs
     .map(
       ({ summary }) => `<tr><td><a href="#${htmlEscape(summary.runId)}">${htmlEscape(summary.runId)}</a></td><td><span class="status ${summary.status}">${summary.status}</span></td><td>${htmlEscape(summary.createdAt)}</td><td>${htmlEscape(`${summary.provider}/${summary.model}`)}</td><td>${summary.succeeded}/${summary.total}</td><td>${summary.failed}</td><td><code>${htmlEscape(summary.gitSha.slice(0, 12))}${summary.gitDirty ? "*" : ""}</code></td></tr>`,
@@ -670,10 +857,16 @@ function renderDashboard(
         : summary.comparisonUnavailableReason
           ? `Comparison unavailable: ${htmlEscape(summary.comparisonUnavailableReason)}`
           : "No baseline";
-      return `<section id="${htmlEscape(summary.runId)}"><h2>${htmlEscape(summary.runId)}</h2><p>${htmlEscape(summary.notes)}</p><div class="cards"><div><strong>${summary.succeeded}</strong><span>Succeeded</span></div><div><strong>${summary.failed}</strong><span>Failed</span></div><div><strong>${summary.pending}</strong><span>Pending</span></div><div><strong>${summary.total}</strong><span>Total</span></div></div><div class="bar"><i style="width:${summary.total ? (summary.succeeded / summary.total) * 100 : 0}%"></i></div><p>${comparison}</p><table><thead><tr><th>Modality</th><th>Total</th><th>Succeeded</th><th>Failed</th></tr></thead><tbody>${Object.entries(summary.byModality).map(([key, value]) => `<tr><td>${key}</td><td>${value.total}</td><td>${value.succeeded}</td><td>${value.failed}</td></tr>`).join("")}</tbody></table><details><summary>Failure details (${summary.failed})</summary><table><thead><tr><th>Message</th><th>Modality</th><th>Code</th><th>Detail</th><th>Retryable</th></tr></thead><tbody>${failureRows}</tbody></table></details><p class="meta">Dataset <code>${htmlEscape(summary.datasetFingerprint)}</code><br>Git <code>${htmlEscape(summary.gitSha)}</code>${summary.gitDirty ? " (dirty)" : ""}</p></section>`;
+      return `<section id="${htmlEscape(summary.runId)}"><h2>${htmlEscape(summary.runId)}</h2><p>${htmlEscape(summary.notes)}</p><p class="meta">Prompt <code>${htmlEscape(summary.promptVersion)}</code> · partition <code>${htmlEscape(summary.partition)}</code> · ${summary.usage.inputTokens} input / ${summary.usage.outputTokens} output tokens${summary.usage.costUsd > 0 ? ` · $${summary.usage.costUsd.toFixed(6)}` : ""}</p><div class="cards"><div><strong>${summary.succeeded}</strong><span>Succeeded</span></div><div><strong>${summary.failed}</strong><span>Failed</span></div><div><strong>${summary.pending}</strong><span>Pending</span></div><div><strong>${summary.total}</strong><span>Total</span></div></div><div class="bar"><i style="width:${summary.total ? (summary.succeeded / summary.total) * 100 : 0}%"></i></div><p>${comparison}</p><table><thead><tr><th>Modality</th><th>Total</th><th>Succeeded</th><th>Failed</th></tr></thead><tbody>${Object.entries(summary.byModality).map(([key, value]) => `<tr><td>${key}</td><td>${value.total}</td><td>${value.succeeded}</td><td>${value.failed}</td></tr>`).join("")}</tbody></table><details><summary>Failure details (${summary.failed})</summary><table><thead><tr><th>Message</th><th>Modality</th><th>Code</th><th>Detail</th><th>Retryable</th></tr></thead><tbody>${failureRows}</tbody></table></details><p class="meta">Dataset <code>${htmlEscape(summary.datasetFingerprint)}</code><br>Git <code>${htmlEscape(summary.gitSha)}</code>${summary.gitDirty ? " (dirty)" : ""}</p></section>`;
     })
     .join("\n");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Message Router Run History</title><style>:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#0b1020;color:#e8ecf8}body{max-width:1200px;margin:auto;padding:32px}h1,h2{letter-spacing:-.02em}section{background:#121a2f;border:1px solid #26314d;border-radius:14px;padding:24px;margin:24px 0;scroll-margin-top:20px}.cards{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px}.cards div{background:#0b1020;border-radius:10px;padding:16px}.cards strong{display:block;font-size:2rem}.cards span,.meta{color:#9ba8c7}.bar{height:10px;background:#3b2030;border-radius:10px;overflow:hidden;margin:16px 0}.bar i{display:block;height:100%;background:#54d08a}table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92rem}th,td{text-align:left;padding:9px;border-bottom:1px solid #26314d;vertical-align:top}a{color:#8bb8ff}.status{padding:3px 8px;border-radius:999px;background:#293451}.status.failed{background:#5a2531}.status.succeeded{background:#1f563e}code{overflow-wrap:anywhere}@media(max-width:700px){body{padding:16px}.cards{grid-template-columns:repeat(2,1fr)}table{display:block;overflow:auto}}</style></head><body><h1>Message Router Run History</h1><p>Generated from append-only run events. Interrupted runs can resume safely; a partial submission CSV is never emitted. <a href="../eval-runs/index.html">Sample evaluation history</a></p><section><h2>Runs</h2><table><thead><tr><th>Run</th><th>Status</th><th>Created</th><th>Provider/model</th><th>Success</th><th>Failures</th><th>Git</th></tr></thead><tbody>${historyRows}</tbody></table></section><section><h2>Restore a prior run</h2><p>Only restore an <strong>all-successful</strong> run whose dataset fingerprint matches the current dataset. Revalidate its 110-row <code>output.csv</code> before copying it to the submission path. Use the recorded Git SHA to restore source separately; this dashboard never mutates code or submission files.</p></section>${sections}</body></html>`;
+  const intro = sampleHistory
+    ? "Generated from append-only sample run events. Labels are evaluated only after inference, and successful runs keep their metrics beside the journal."
+    : 'Generated from append-only target run events. Interrupted runs can resume safely; a partial submission CSV is never emitted. <a href="../eval-runs/index.html">Sample evaluation history</a>';
+  const restore = sampleHistory
+    ? ""
+    : '<section><h2>Restore a prior run</h2><p>Only restore an <strong>all-successful</strong> run whose dataset fingerprint matches the current dataset. Revalidate its 110-row <code>output.csv</code> before copying it to the submission path. Use the recorded Git SHA to restore source separately; this dashboard never mutates code or submission files.</p></section>';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Message Router Run History</title><style>:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif;background:#0b1020;color:#e8ecf8}body{max-width:1200px;margin:auto;padding:32px}h1,h2{letter-spacing:-.02em}section{background:#121a2f;border:1px solid #26314d;border-radius:14px;padding:24px;margin:24px 0;scroll-margin-top:20px}.cards{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px}.cards div{background:#0b1020;border-radius:10px;padding:16px}.cards strong{display:block;font-size:2rem}.cards span,.meta{color:#9ba8c7}.bar{height:10px;background:#3b2030;border-radius:10px;overflow:hidden;margin:16px 0}.bar i{display:block;height:100%;background:#54d08a}table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92rem}th,td{text-align:left;padding:9px;border-bottom:1px solid #26314d;vertical-align:top}a{color:#8bb8ff}.status{padding:3px 8px;border-radius:999px;background:#293451}.status.failed{background:#5a2531}.status.succeeded{background:#1f563e}code{overflow-wrap:anywhere}@media(max-width:700px){body{padding:16px}.cards{grid-template-columns:repeat(2,1fr)}table{display:block;overflow:auto}}</style></head><body><h1>Message Router Run History</h1><p>${intro}</p><section><h2>Runs</h2><table><thead><tr><th>Run</th><th>Status</th><th>Created</th><th>Provider/model</th><th>Success</th><th>Failures</th><th>Git</th></tr></thead><tbody>${historyRows}</tbody></table></section>${restore}${sections}</body></html>`;
 }
 
 export async function rebuildRunHistory(runsDirInput: string): Promise<RunSummary[]> {
@@ -749,10 +942,11 @@ export async function rebuildRunHistory(runsDirInput: string): Promise<RunSummar
   return newestFirst.map(({ summary }) => summary);
 }
 
-export async function writeSuccessfulRunOutput(args: {
+export async function readSuccessfulRunPredictions(args: {
   index: DatasetIndex;
   runDir: string;
-}): Promise<void> {
+  messages: readonly Message[];
+}): Promise<PredictionRow[]> {
   const manifest = await readManifest(args.runDir);
   const currentFingerprint = await fingerprintDataset(args.index.dataset);
   if (manifest.datasetFingerprint !== currentFingerprint) {
@@ -764,17 +958,36 @@ export async function writeSuccessfulRunOutput(args: {
   if (completion?.type !== "run_completed" || completion.status !== "succeeded") {
     throw new Error("Cannot emit output: run is not completed successfully");
   }
+  const expectedTargets = args.messages.map((message) => ({
+    messageId: message.message_id,
+    modality: modalityFor(message.media_type),
+  }));
+  if (JSON.stringify(manifest.targets) !== JSON.stringify(expectedTargets)) {
+    throw new Error("Cannot emit output: run target partition does not match");
+  }
   const cases = foldCases(events);
-  const rows = args.index.dataset.messages.map((message) => {
+  return args.messages.map((message) => {
     const event = cases.get(message.message_id);
     if (!event || event.type !== "case_succeeded") {
       throw new Error(`Run is incomplete: ${message.message_id} has no valid judgement`);
     }
     return decisionToPrediction(message.message_id, event.decision as Decision);
   });
+}
+
+export async function writeSuccessfulRunOutput(args: {
+  index: DatasetIndex;
+  runDir: string;
+  outputPath?: string;
+}): Promise<void> {
+  const rows = await readSuccessfulRunPredictions({
+    index: args.index,
+    runDir: args.runDir,
+    messages: args.index.dataset.messages,
+  });
   await writeValidatedOutput({
     index: args.index,
     rows,
-    outputPath: path.join(args.runDir, "output.csv"),
+    outputPath: args.outputPath ?? path.join(args.runDir, "output.csv"),
   });
 }
