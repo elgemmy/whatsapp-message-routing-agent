@@ -64,6 +64,8 @@ export function classifyOpenRouterError(error: unknown): ClassifiedOpenRouterErr
     const errorType = [providerError?.type, metadata?.error_type]
       .filter((value): value is string => typeof value === "string")
       .join(" ");
+    const providerMessage =
+      typeof providerError?.message === "string" ? providerError.message : "";
     if (status === 401) {
       return { code: "authentication_failed", message: "OpenRouter authentication failed.", retryable: true, stopRun: true };
     }
@@ -77,6 +79,9 @@ export function classifyOpenRouterError(error: unknown): ClassifiedOpenRouterErr
       return { code: "authentication_failed", message: "OpenRouter permission or authentication failed.", retryable: true, stopRun: true };
     }
     if (status === 404) {
+      if (/requested parameters|support.*parameters/i.test(providerMessage)) {
+        return { code: "unsupported_parameters", message: "No OpenRouter endpoint supports the requested model parameters.", retryable: false, stopRun: true };
+      }
       return { code: "invalid_model", message: "OpenRouter model is unavailable or invalid.", retryable: false, stopRun: true };
     }
     if (status === 429) {
@@ -194,7 +199,9 @@ export function createOpenRouterRoutingProvider(
         }),
         timeout: options.timeoutMs ?? 60_000,
         maxRetries: options.maxRetries ?? 2,
-        temperature: options.temperature ?? 0,
+        ...(options.temperature !== undefined
+          ? { temperature: options.temperature }
+          : {}),
         maxOutputTokens: options.maxOutputTokens ?? 300,
       });
       return {

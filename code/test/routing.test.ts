@@ -248,6 +248,22 @@ test("provider errors are reduced to stable retry policy without raw payloads", 
     classifyOpenRouterError(apiError(400, { error: { code: 502 } })).code,
     "provider_unavailable",
   );
+  assert.deepEqual(
+    classifyOpenRouterError(
+      apiError(404, {
+        error: {
+          code: 404,
+          message: "No endpoints found that can handle the requested parameters.",
+        },
+      }),
+    ),
+    {
+      code: "unsupported_parameters",
+      message: "No OpenRouter endpoint supports the requested model parameters.",
+      retryable: false,
+      stopRun: true,
+    },
+  );
   assert.equal(classifyOpenRouterError(apiError(402)).code, "insufficient_credits");
   assert.deepEqual(
     classifyOpenRouterError(
