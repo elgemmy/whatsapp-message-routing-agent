@@ -55,3 +55,14 @@ Status: accepted; evaluate before expanding target spend
 - Generalize the existing append-only runner instead of building a provider-specific run path. Manifests bind provider, exact model, prompt version, partition, dataset fingerprint, and Git state; per-case events retain bounded usage metadata but never prompts or raw provider bodies.
 - Run a small stratified sample smoke first, then all 30 illustrative samples. Evaluate labels only after inference. Start the 110 target run only after sample artifacts are structurally valid and inspected.
 - A successful target run creates its canonical run-local `output.csv`. Publishing to the standalone submission path always requires an explicit CLI destination and revalidates the journal, dataset fingerprint, coverage, evidence, and CSV contract.
+
+## 2026-08-01 — Luna text/image baseline and deferred speech-to-text
+
+Status: accepted after first live smoke; do not expand to voice or targets yet
+
+- Use `openai/gpt-5.6-luna` as the initial primary routing model. OpenRouter currently advertises text, image, file, and structured-output support for Luna, but not native audio input.
+- Keep the runtime at one primary structured routing call per message. In the audio pass, add one bounded speech-to-text call for voice notes and pass the transcript into the same primary router; do not introduce a separate audio-routing agent.
+- Keep a future Gemini image-understanding call as an evaluation-backed variant, not part of the current baseline.
+- Live smoke `luna-routing-v1-smoke-3` attempted eight non-audio samples: seven technical successes and one repeated `invalid_output`; among successful predictions, action was correct for 5/7, type for 6/7, and exact action plus type for 5/7.
+- Two image reasons reached the 240-character schema ceiling and ended abruptly. Treat this as a prompt/schema quality issue before broad evaluation, not as an acceptable final explanation.
+- Do not resume the full 30 samples or 110 targets until the STT path exists. Continue with explicit non-audio IDs and inspect `sample-progress.md` after each bounded run.

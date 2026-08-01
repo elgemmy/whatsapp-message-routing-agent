@@ -16,7 +16,7 @@ Copy `.env.example` to `.env` and set your OpenRouter key before live routing. `
 
 ```text
 OPENROUTER_API_KEY=...
-OPENROUTER_MODEL=google/gemini-2.5-flash
+OPENROUTER_MODEL=openai/gpt-5.6-luna
 ```
 
 The model is configurable and pinned in every run manifest. Confirm its current modalities, structured-output support, and pricing through OpenRouter before a paid run.
@@ -31,9 +31,9 @@ npm test
 npm run verify:harness
 npm run validate:data
 npm run validate:output
-npm run route:samples -- --run-id gemini25flash-routing-v1
-npm run route -- --run-id gemini25flash-routing-v1
-npm run output:emit -- --run-id gemini25flash-routing-v1 --output ../output.csv
+npm run route:samples -- --run-id luna-routing-v1-smoke
+npm run route -- --run-id luna-target-routing-v1
+npm run output:emit -- --run-id luna-target-routing-v1 --output ../output.csv
 npm run eval:seed
 npm run eval:sample-seed
 npm run runs:rebuild
@@ -53,27 +53,27 @@ Start with supplied samples so label quality can be measured after inference wit
 
 ```sh
 npm run route:samples -- \
-  --run-id gemini25flash-routing-v1 \
+  --run-id luna-routing-v1-smoke \
   --message-id sample_msg_001 \
+  --message-id sample_msg_007 \
   --message-id sample_msg_015 \
   --message-id sample_msg_019 \
-  --message-id sample_msg_041 \
   --message-id sample_msg_046 \
+  --message-id sample_msg_047 \
+  --message-id sample_msg_048 \
   --message-id sample_msg_049
 ```
 
-This bounded smoke records six real responses covering all modalities and actions plus an opted-out business promotion, an unfamiliar sender, an unknown-type fallback, and the benign extension-mismatch case. Artifacts live inside `eval-runs/live/<run-id>/`. Resume the same run without message filters to process the remaining samples:
+This bounded Luna smoke covers text and image cases across all actions, group/business/personal relationships, opt-in and opt-out promotions, scam pressure, a legitimate safety advisory, an unfamiliar sender, and benign extension mismatches. Artifacts live inside `eval-runs/live/<run-id>/`; `sample-progress.md` and `sample-progress.json` compare attempted cases only after inference and keep technical failures separate from semantic accuracy.
 
-```sh
-npm run route:samples -- --run-id gemini25flash-routing-v1
-```
+Do not resume all samples or targets under Luna yet: OpenRouter does not advertise native audio input for this model, and three samples plus eight targets contain voice notes. The planned audio pass will use a bounded speech-to-text model and provide its transcript to the same primary router. Until then, use explicit `--message-id` filters for Luna experiments.
 
 When all 30 sample cases succeed, the run directory receives `sample-predictions.csv`, `sample-metrics.json`, and `sample-report.md`. Labels are evaluated only after provider calls have been journaled.
 
 After inspecting that evaluation, run targets under a distinct run ID:
 
 ```sh
-npm run route -- --run-id gemini25flash-target-routing-v1
+npm run route -- --run-id luna-target-routing-v1 --message-id NON_AUDIO_MESSAGE_ID
 ```
 
 Use `--limit N` or repeated `--message-id ID` options for bounded runs. An ordinary resume skips every recorded outcome. `--retry-failures` retries only failures marked retryable; successful and nonretryable cases are never rebilled. Transport, authentication, and rate-limit failures pause the batch instead of repeating the same failure across remaining cases; fix the external cause, then resume explicitly with `--retry-failures`.
@@ -82,7 +82,7 @@ A completely successful target run automatically creates its canonical `runs/<ru
 
 ```sh
 npm run output:emit -- \
-  --run-id gemini25flash-target-routing-v1 \
+  --run-id luna-target-routing-v1 \
   --output ../output.csv
 npm run validate:output -- --input ../output.csv
 ```
