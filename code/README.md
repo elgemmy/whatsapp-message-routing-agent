@@ -17,6 +17,7 @@ Copy `.env.example` to `.env` and set your OpenRouter key before live routing. `
 ```text
 OPENROUTER_API_KEY=...
 OPENROUTER_MODEL=openai/gpt-5.6-luna
+OPENROUTER_TRANSCRIPTION_MODEL=qwen/qwen3-asr-flash-2026-02-10
 ```
 
 The model is configurable and pinned in every run manifest. Confirm its current modalities, structured-output support, and pricing through OpenRouter before a paid run.
@@ -66,7 +67,20 @@ npm run route:samples -- \
 
 This bounded Luna smoke covers text and image cases across all actions, group/business/personal relationships, opt-in and opt-out promotions, scam pressure, a legitimate safety advisory, an unfamiliar sender, and benign extension mismatches. Artifacts live inside `eval-runs/live/<run-id>/`; `sample-progress.md` and `sample-progress.json` compare attempted cases only after inference and keep technical failures separate from semantic accuracy.
 
-Do not resume all samples or targets under Luna yet: OpenRouter does not advertise native audio input for this model, and three samples plus eight targets contain voice notes. The planned audio pass will use a bounded speech-to-text model and provide its transcript to the same primary router. Until then, use explicit `--message-id` filters for Luna experiments.
+Voice notes use one bounded OpenRouter speech-to-text call before Luna. The default is `qwen/qwen3-asr-flash-2026-02-10`; override it with `OPENROUTER_TRANSCRIPTION_MODEL` or `--transcription-model`. The append-only journal records each transcript, detected format, audio hash, model identity, duration, and reported usage before routing, so a Luna retry or resumed run reuses the transcript instead of rebilling STT. Audio bytes are never sent to Luna.
+
+Luna routing uses OpenRouter reasoning effort `max`. Run manifests bind that setting, the 2,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. Prompt `routing-v2` asks for a complete short reason and allows enough schema headroom to avoid the prior 240-character truncation boundary.
+
+For a gradual complete-sample run, reuse one run ID so successful calls and transcripts remain resumable:
+
+```sh
+npm run route:samples -- --run-id luna-max-qwen-stt-v1 --message-id sample_msg_042
+npm run route:samples -- --run-id luna-max-qwen-stt-v1 --retry-failures \
+  --message-id sample_msg_041 --message-id sample_msg_042 \
+  --message-id sample_msg_043 --message-id sample_msg_007 \
+  --message-id sample_msg_048 --message-id sample_msg_049
+npm run route:samples -- --run-id luna-max-qwen-stt-v1 --retry-failures
+```
 
 When all 30 sample cases succeed, the run directory receives `sample-predictions.csv`, `sample-metrics.json`, and `sample-report.md`. Labels are evaluated only after provider calls have been journaled.
 
@@ -108,7 +122,7 @@ Each run uses:
 ```text
 runs/<run-id>/
   manifest.json   immutable run and reproducibility metadata
-  events.jsonl    append-only source of truth
+  events.jsonl    append-only decisions and reusable voice transcripts
   summary.json    rebuildable projection
   report.md       rebuildable human-readable report
 ```

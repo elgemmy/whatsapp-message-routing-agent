@@ -23,6 +23,7 @@ import { parsePredictionCsv, validatePredictionSet } from "../src/contract.js";
 import {
   PROMPT_VERSION,
   type RoutingProvider,
+  type TranscriptionProvider,
   validateRoutingDecisionEvidence,
 } from "../src/routing.js";
 import { indexPromise, repoRoot } from "./helpers.js";
@@ -71,6 +72,8 @@ test("seeded run records 110 honest failures and resumes without duplication", a
   legacyManifest.schemaVersion = 1;
   delete legacyManifest.promptVersion;
   delete legacyManifest.partition;
+  delete legacyManifest.routingSettings;
+  delete legacyManifest.transcription;
   await writeFile(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`, "utf8");
 
   await createSeedFailureRun(args);
@@ -274,6 +277,7 @@ test("provider runs resume safely and retry only retryable invalid decisions", a
     provider: "fake",
     model: "fake/structured",
     promptVersion: PROMPT_VERSION,
+    settings: { reasoningEffort: null, maxOutputTokens: 300, temperature: null },
     validateDecision: validateRoutingDecisionEvidence,
     classifyError() {
       return { code: "fake_failure", message: "Fake provider failure.", retryable: true };
@@ -375,6 +379,129 @@ test("provider runs resume safely and retry only retryable invalid decisions", a
   );
 });
 
+test("voice transcription is journaled once and reused after routing failure", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-stt-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const index = await indexPromise;
+  const voice = index.dataset.samples.find(
+    (sample) => sample.message_id === "sample_msg_043",
+  )!;
+  let transcriptionCalls = 0;
+  let routingCalls = 0;
+  let repaired = false;
+  const transcriber: TranscriptionProvider = {
+    provider: "fake-stt",
+    model: "fake-stt/v1",
+    classifyError() {
+      return { code: "fake_stt_failure", message: "Fake STT failure.", retryable: true };
+    },
+    async transcribe() {
+      transcriptionCalls += 1;
+      return {
+        transcript: "Today only, get a discount. Reply STOP to unsubscribe.",
+        audioSha256: "a".repeat(64),
+        detectedFormat: "m4a",
+        metadata: { costUsd: 0.0002, durationSeconds: 41.15 },
+      };
+    },
+  };
+  const provider: RoutingProvider = {
+    provider: "fake",
+    model: "fake/router",
+    promptVersion: PROMPT_VERSION,
+    settings: { reasoningEffort: "max", maxOutputTokens: 2_000, temperature: null },
+    validateDecision: validateRoutingDecisionEvidence,
+    classifyError() {
+      return { code: "fake_failure", message: "Fake routing failure.", retryable: true };
+    },
+    async judge(_context, _datasetRoot, transcript) {
+      routingCalls += 1;
+      assert.match(transcript ?? "", /Reply STOP/);
+      return {
+        rawDecision: repaired
+          ? {
+              action: "mute",
+              messageType: "spam",
+              reason: "Repeated marketing can be suppressed.",
+              confidence: 0.8,
+              evidenceMessageIds: [],
+            }
+          : {
+              action: "invalid",
+              messageType: "spam",
+              reason: "Invalid fixture.",
+              confidence: 0.8,
+              evidenceMessageIds: [],
+            },
+        metadata: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+      };
+    },
+  };
+  const args = {
+    index,
+    messages: [voice],
+    runsDir: temporaryRoot,
+    repoRoot,
+    runId: "voice-reuse",
+    partition: "samples" as const,
+    provider,
+    transcriber,
+    notes: "STT reuse fixture.",
+  };
+
+  const failed = await createOrResumeRun(args);
+  assert.equal(failed.status, "failed");
+  assert.equal(transcriptionCalls, 1);
+  assert.equal(routingCalls, 1);
+  assert.equal(failed.usage.transcription.calls, 1);
+  assert.equal(failed.usage.routing.calls, 1);
+  assert.equal(failed.usage.costUsd, 0.0002);
+
+  transcriptionCalls = 0;
+  routingCalls = 0;
+  await createOrResumeRun(args);
+  assert.equal(transcriptionCalls, 0);
+  assert.equal(routingCalls, 0);
+
+  repaired = true;
+  const completed = await createOrResumeRun({ ...args, retryFailures: true });
+  assert.equal(completed.status, "succeeded");
+  assert.equal(transcriptionCalls, 0, "routing retry must reuse journaled transcript");
+  assert.equal(routingCalls, 1);
+  assert.equal(completed.usage.transcription.calls, 1);
+  assert.equal(completed.usage.routing.calls, 2);
+  const events = await readRunEvents(
+    path.join(temporaryRoot, "voice-reuse", "events.jsonl"),
+  );
+  assert.equal(events.filter((event) => event.type === "case_transcribed").length, 1);
+  assert.equal(
+    events.filter(
+      (event) => event.type === "case_failed" && event.stage === "routing",
+    ).length,
+    1,
+  );
+
+  await assert.rejects(
+    createOrResumeRun({
+      ...args,
+      retryFailures: true,
+      transcriber: { ...transcriber, model: "fake-stt/v2" },
+    }),
+    /provider configuration changed/,
+  );
+  await assert.rejects(
+    createOrResumeRun({
+      ...args,
+      retryFailures: true,
+      provider: {
+        ...provider,
+        settings: { ...provider.settings, reasoningEffort: "high" },
+      },
+    }),
+    /provider configuration changed/,
+  );
+});
+
 test("terminal provider failures are never retried", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-terminal-"));
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
@@ -384,6 +511,7 @@ test("terminal provider failures are never retried", async (t) => {
     provider: "fake",
     model: "fake/terminal",
     promptVersion: PROMPT_VERSION,
+    settings: { reasoningEffort: null, maxOutputTokens: 300, temperature: null },
     validateDecision: validateRoutingDecisionEvidence,
     classifyError() {
       return { code: "authentication_failed", message: "Authentication failed.", retryable: false };
@@ -425,6 +553,7 @@ test("batch-pausing failures require an explicit retry before pending calls cont
     provider: "fake",
     model: "fake/paused",
     promptVersion: PROMPT_VERSION,
+    settings: { reasoningEffort: null, maxOutputTokens: 300, temperature: null },
     validateDecision: validateRoutingDecisionEvidence,
     classifyError() {
       return {
@@ -482,6 +611,7 @@ test("nonretryable batch stops never advance pending cases", async (t) => {
     provider: "fake",
     model: "fake/invalid",
     promptVersion: PROMPT_VERSION,
+    settings: { reasoningEffort: null, maxOutputTokens: 300, temperature: null },
     validateDecision: validateRoutingDecisionEvidence,
     classifyError() {
       return {

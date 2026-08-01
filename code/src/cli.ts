@@ -10,6 +10,7 @@ import {
 } from "./evaluate.js";
 import { decisionToPrediction } from "./domain.js";
 import { createOpenRouterRoutingProvider } from "./providers/openrouter.js";
+import { createOpenRouterTranscriptionProvider } from "./providers/openrouter-transcription.js";
 import {
   createOrResumeRun,
   createSeedFailureRun,
@@ -190,6 +191,10 @@ async function route(partition: "targets" | "samples"): Promise<void> {
     throw new Error("OPENROUTER_API_KEY is required; set it in the environment or code/.env");
   }
   const modelId = requiredOption("--model", "OPENROUTER_MODEL");
+  const transcriptionModelId =
+    option("--transcription-model") ??
+    process.env.OPENROUTER_TRANSCRIPTION_MODEL?.trim() ??
+    "qwen/qwen3-asr-flash-2026-02-10";
   const runId = requiredRunId();
   const { datasetRoot, runsDir, evalRunsDir } = paths();
   const index = await buildDatasetIndex(await loadDataset(datasetRoot));
@@ -203,6 +208,11 @@ async function route(partition: "targets" | "samples"): Promise<void> {
   const provider = createOpenRouterRoutingProvider({
     modelId,
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    reasoningEffort: "max",
+  });
+  const transcriber = createOpenRouterTranscriptionProvider({
+    modelId: transcriptionModelId,
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   });
   const summary = await createOrResumeRun({
     index,
@@ -212,6 +222,7 @@ async function route(partition: "targets" | "samples"): Promise<void> {
     runId,
     partition,
     provider,
+    transcriber,
     notes:
       partition === "targets"
         ? "OpenRouter structured-routing target run."
@@ -282,6 +293,8 @@ async function route(partition: "targets" | "samples"): Promise<void> {
         provider: summary.provider,
         model: summary.model,
         promptVersion: summary.promptVersion,
+        routingSettings: summary.routingSettings,
+        transcription: summary.transcription,
         status: summary.status,
         succeeded: summary.succeeded,
         failed: summary.failed,
@@ -364,7 +377,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    "Usage: cli.js <validate-data|validate-output|seed|eval-sample-seed|route-targets|route-samples|emit-output|rebuild-runs> [--dataset PATH] [--input PATH] [--output PATH] [--runs PATH] [--eval-runs PATH] [--run-id ID] [--model ID] [--message-id ID] [--limit N] [--timeout-ms N] [--recover-lock] [--retry-failures]",
+    "Usage: cli.js <validate-data|validate-output|seed|eval-sample-seed|route-targets|route-samples|emit-output|rebuild-runs> [--dataset PATH] [--input PATH] [--output PATH] [--runs PATH] [--eval-runs PATH] [--run-id ID] [--model ID] [--transcription-model ID] [--message-id ID] [--limit N] [--timeout-ms N] [--recover-lock] [--retry-failures]",
   );
 }
 

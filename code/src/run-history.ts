@@ -24,7 +24,11 @@ import {
   type PredictionRow,
 } from "./domain.js";
 import { writeValidatedOutput } from "./contract.js";
-import type { RoutingCallMetadata, RoutingProvider } from "./routing.js";
+import type {
+  RoutingCallMetadata,
+  RoutingProvider,
+  TranscriptionProvider,
+} from "./routing.js";
 
 const ModalitySchema = z.enum(["text", "image", "voice"]);
 type Modality = z.infer<typeof ModalitySchema>;
@@ -57,8 +61,57 @@ const RunManifestV2Schema = RunManifestV1Schema.omit({ schemaVersion: true }).ex
   partition: z.enum(["targets", "samples"]),
 }).strict();
 
-const StoredRunManifestSchema = z.union([RunManifestV1Schema, RunManifestV2Schema]);
-export type RunManifest = z.infer<typeof RunManifestV2Schema>;
+const RoutingSettingsSchema = z
+  .object({
+    reasoningEffort: z.string().nullable(),
+    maxOutputTokens: z.number().int().positive(),
+    temperature: z.number().finite().nullable(),
+  })
+  .strict();
+
+const TranscriptionSettingsSchema = z
+  .object({ provider: z.string().min(1), model: z.string().min(1) })
+  .strict();
+
+const RunManifestV3Schema = RunManifestV2Schema.omit({ schemaVersion: true })
+  .extend({
+    schemaVersion: z.literal(3),
+    routingSettings: RoutingSettingsSchema,
+    transcription: TranscriptionSettingsSchema.nullable(),
+  })
+  .strict();
+
+const StoredRunManifestSchema = z.union([
+  RunManifestV1Schema,
+  RunManifestV2Schema,
+  RunManifestV3Schema,
+]);
+export type RunManifest = z.infer<typeof RunManifestV3Schema>;
+
+const CallMetadataSchema = z
+  .object({
+    responseId: z.string().optional(),
+    finishReason: z.string().optional(),
+    rawFinishReason: z.string().optional(),
+    inputTokens: z.number().int().nonnegative().optional(),
+    outputTokens: z.number().int().nonnegative().optional(),
+    totalTokens: z.number().int().nonnegative().optional(),
+    costUsd: z.number().nonnegative().optional(),
+    routedProvider: z.string().optional(),
+    warnings: z.array(z.string()).optional(),
+  })
+  .strict();
+
+const TranscriptionMetadataSchema = z
+  .object({
+    responseId: z.string().optional(),
+    inputTokens: z.number().int().nonnegative().optional(),
+    outputTokens: z.number().int().nonnegative().optional(),
+    totalTokens: z.number().int().nonnegative().optional(),
+    costUsd: z.number().nonnegative().optional(),
+    durationSeconds: z.number().nonnegative().optional(),
+  })
+  .strict();
 
 const RunStartedEventSchema = z
   .object({
@@ -75,6 +128,22 @@ const RunResumedEventSchema = z
     retryFailures: z.boolean(),
   })
   .strict();
+const CaseTranscribedEventSchema = z
+  .object({
+    type: z.literal("case_transcribed"),
+    sequence: z.number().int().positive(),
+    timestamp: z.string().datetime({ offset: true }),
+    messageId: z.string().min(1),
+    mediaId: z.string().min(1),
+    provider: z.string().min(1),
+    model: z.string().min(1),
+    durationMs: z.number().int().nonnegative(),
+    transcript: z.string().trim().min(1),
+    audioSha256: z.string().length(64),
+    detectedFormat: z.string().min(1),
+    metadata: TranscriptionMetadataSchema.optional(),
+  })
+  .strict();
 const CaseFailedEventSchema = z
   .object({
     type: z.literal("case_failed"),
@@ -83,11 +152,13 @@ const CaseFailedEventSchema = z
     messageId: z.string().min(1),
     modality: ModalitySchema,
     attempt: z.number().int().positive(),
+    stage: z.enum(["transcription", "routing"]).optional(),
     retryable: z.boolean(),
     stopsRun: z.boolean().optional(),
     error: z
       .object({ code: z.string().min(1), message: z.string().min(1) })
       .strict(),
+    metadata: CallMetadataSchema.optional(),
   })
   .strict();
 const CaseSucceededEventSchema = z
@@ -102,20 +173,7 @@ const CaseSucceededEventSchema = z
     decision: DecisionSchema,
     rawMessageType: z.string(),
     usedUnknownFallback: z.boolean(),
-    metadata: z
-      .object({
-        responseId: z.string().optional(),
-        finishReason: z.string().optional(),
-        rawFinishReason: z.string().optional(),
-        inputTokens: z.number().int().nonnegative().optional(),
-        outputTokens: z.number().int().nonnegative().optional(),
-        totalTokens: z.number().int().nonnegative().optional(),
-        costUsd: z.number().nonnegative().optional(),
-        routedProvider: z.string().optional(),
-        warnings: z.array(z.string()).optional(),
-      })
-      .strict()
-      .optional(),
+    metadata: CallMetadataSchema.optional(),
   })
   .strict();
 const RunCompletedEventSchema = z
@@ -130,12 +188,14 @@ const RunCompletedEventSchema = z
 export const RunEventSchema = z.discriminatedUnion("type", [
   RunStartedEventSchema,
   RunResumedEventSchema,
+  CaseTranscribedEventSchema,
   CaseFailedEventSchema,
   CaseSucceededEventSchema,
   RunCompletedEventSchema,
 ]);
 export type RunEvent = z.infer<typeof RunEventSchema>;
 type CaseEvent = Extract<RunEvent, { type: "case_failed" | "case_succeeded" }>;
+type TranscriptionEvent = Extract<RunEvent, { type: "case_transcribed" }>;
 
 export type RunSummary = {
   runId: string;
@@ -147,6 +207,8 @@ export type RunSummary = {
   provider: string;
   model: string;
   promptVersion: string;
+  routingSettings: z.infer<typeof RoutingSettingsSchema>;
+  transcription: z.infer<typeof TranscriptionSettingsSchema> | null;
   partition: "targets" | "samples";
   baselineRunId: string | null;
   notes: string;
@@ -163,6 +225,21 @@ export type RunSummary = {
     outputTokens: number;
     totalTokens: number;
     costUsd: number;
+    routing: {
+      calls: number;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      costUsd: number;
+    };
+    transcription: {
+      calls: number;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      costUsd: number;
+      durationSeconds: number;
+    };
   };
   comparison: null | {
     baselineRunId: string;
@@ -263,18 +340,42 @@ function foldCases(events: readonly RunEvent[]): Map<string, CaseEvent> {
   return cases;
 }
 
+function foldTranscriptions(
+  events: readonly RunEvent[],
+): Map<string, TranscriptionEvent> {
+  const transcriptions = new Map<string, TranscriptionEvent>();
+  for (const event of events) {
+    if (event.type === "case_transcribed") {
+      transcriptions.set(event.messageId, event);
+    }
+  }
+  return transcriptions;
+}
+
 async function readManifest(runDir: string): Promise<RunManifest> {
   const stored = StoredRunManifestSchema.parse(
     JSON.parse(await readFile(path.join(runDir, "manifest.json"), "utf8")),
   );
-  return stored.schemaVersion === 2
-    ? stored
-    : {
-        ...stored,
-        schemaVersion: 2,
-        promptVersion: "no-judgement-v1",
-        partition: "targets",
-      };
+  if (stored.schemaVersion === 3) return stored;
+  const v2 =
+    stored.schemaVersion === 2
+      ? stored
+      : {
+          ...stored,
+          schemaVersion: 2 as const,
+          promptVersion: "no-judgement-v1",
+          partition: "targets" as const,
+        };
+  return {
+    ...v2,
+    schemaVersion: 3,
+    routingSettings: {
+      reasoningEffort: null,
+      maxOutputTokens: 300,
+      temperature: null,
+    },
+    transcription: null,
+  };
 }
 
 async function runDirectories(runsDir: string): Promise<string[]> {
@@ -360,6 +461,7 @@ export async function createOrResumeRun(args: {
   runId: string;
   partition: "targets" | "samples";
   provider: RoutingProvider;
+  transcriber?: TranscriptionProvider;
   notes: string;
   recoverLock?: boolean;
   retryFailures?: boolean;
@@ -396,7 +498,18 @@ export async function createOrResumeRun(args: {
         manifest.provider !== args.provider.provider ||
         manifest.model !== args.provider.model ||
         manifest.promptVersion !== args.provider.promptVersion ||
-        manifest.partition !== args.partition
+        manifest.partition !== args.partition ||
+        JSON.stringify(manifest.routingSettings) !==
+          JSON.stringify(args.provider.settings) ||
+        JSON.stringify(manifest.transcription) !==
+          JSON.stringify(
+            args.transcriber
+              ? {
+                  provider: args.transcriber.provider,
+                  model: args.transcriber.model,
+                }
+              : null,
+          )
       ) {
         throw new Error(`Cannot resume ${runId}: provider configuration changed`);
       }
@@ -421,8 +534,8 @@ export async function createOrResumeRun(args: {
       for (const message of args.messages) {
         modalityCounts[modalityFor(message.media_type)] += 1;
       }
-      manifest = RunManifestV2Schema.parse({
-        schemaVersion: 2,
+      manifest = RunManifestV3Schema.parse({
+        schemaVersion: 3,
         runId,
         createdAt: now(),
         gitSha: git.sha,
@@ -437,6 +550,13 @@ export async function createOrResumeRun(args: {
         provider: args.provider.provider,
         model: args.provider.model,
         promptVersion: args.provider.promptVersion,
+        routingSettings: args.provider.settings,
+        transcription: args.transcriber
+          ? {
+              provider: args.transcriber.provider,
+              model: args.transcriber.model,
+            }
+          : null,
         partition: args.partition,
         baselineRunId,
         notes: args.notes,
@@ -480,7 +600,9 @@ export async function createOrResumeRun(args: {
       });
     }
 
-    const completedCases = foldCases(await readRunEvents(eventsPath));
+    const persistedEvents = await readRunEvents(eventsPath);
+    const completedCases = foldCases(persistedEvents);
+    const completedTranscriptions = foldTranscriptions(persistedEvents);
     let processed = 0;
     for (const message of args.messages) {
       if (selectedIds && !selectedIds.has(message.message_id)) continue;
@@ -493,8 +615,68 @@ export async function createOrResumeRun(args: {
       processed += 1;
       const context = buildContext(args.index, message);
       const startedAt = performance.now();
+      let voiceTranscript: string | undefined;
+      if (message.media_type === "voice" && args.transcriber) {
+        const persisted = completedTranscriptions.get(message.message_id);
+        if (persisted) {
+          voiceTranscript = persisted.transcript;
+        } else {
+          const transcriptionStartedAt = performance.now();
+          try {
+            if (!context.media) {
+              throw new Error("Voice message has no indexed media.");
+            }
+            const transcription = await args.transcriber.transcribe(
+              context.media,
+              args.index.dataset.root,
+            );
+            const event: TranscriptionEvent = {
+              type: "case_transcribed",
+              sequence: (sequence += 1),
+              timestamp: now(),
+              messageId: message.message_id,
+              mediaId: context.media.mediaId,
+              provider: args.transcriber.provider,
+              model: args.transcriber.model,
+              durationMs: Math.max(
+                0,
+                Math.round(performance.now() - transcriptionStartedAt),
+              ),
+              transcript: transcription.transcript,
+              audioSha256: transcription.audioSha256,
+              detectedFormat: transcription.detectedFormat,
+              ...(transcription.metadata
+                ? { metadata: transcription.metadata }
+                : {}),
+            };
+            await appendEvent(eventsPath, event);
+            completedTranscriptions.set(message.message_id, event);
+            voiceTranscript = event.transcript;
+          } catch (error) {
+            const failure = args.transcriber.classifyError(error);
+            await appendEvent(eventsPath, {
+              type: "case_failed",
+              sequence: (sequence += 1),
+              timestamp: now(),
+              messageId: message.message_id,
+              modality: "voice",
+              attempt: (previous?.attempt ?? 0) + 1,
+              stage: "transcription",
+              retryable: failure.retryable,
+              ...(failure.stopRun ? { stopsRun: true } : {}),
+              error: { code: failure.code, message: failure.message },
+            });
+            if (failure.stopRun) break;
+            continue;
+          }
+        }
+      }
       try {
-        const result = await args.provider.judge(context, args.index.dataset.root);
+        const result = await args.provider.judge(
+          context,
+          args.index.dataset.root,
+          voiceTranscript,
+        );
         let normalized: ReturnType<typeof normalizeRawDecision>;
         try {
           normalized = normalizeRawDecision(result.rawDecision);
@@ -502,6 +684,7 @@ export async function createOrResumeRun(args: {
         } catch {
           throw {
             routingValidationFailure: true,
+            metadata: result.metadata,
           };
         }
         await appendEvent(eventsPath, {
@@ -528,6 +711,13 @@ export async function createOrResumeRun(args: {
                 retryable: true,
               }
             : args.provider.classifyError(error);
+        const metadata =
+          typeof error === "object" &&
+          error !== null &&
+          "routingValidationFailure" in error &&
+          "metadata" in error
+            ? (error.metadata as RoutingCallMetadata | undefined)
+            : undefined;
         await appendEvent(eventsPath, {
           type: "case_failed",
           sequence: (sequence += 1),
@@ -535,9 +725,11 @@ export async function createOrResumeRun(args: {
           messageId: message.message_id,
           modality: modalityFor(message.media_type),
           attempt: (previous?.attempt ?? 0) + 1,
+          stage: "routing",
           retryable: failure.retryable,
           ...(failure.stopRun ? { stopsRun: true } : {}),
           error: { code: failure.code, message: failure.message },
+          ...(metadata ? { metadata } : {}),
         });
         if (failure.stopRun) break;
       }
@@ -577,6 +769,11 @@ export async function createSeedFailureRun(args: {
     provider: "none",
     model: "none",
     promptVersion: "no-judgement-v1",
+    settings: {
+      reasoningEffort: null,
+      maxOutputTokens: 300,
+      temperature: null,
+    },
     async judge() {
       throw new Error("No judgement provider was configured for this seeded run.");
     },
@@ -663,6 +860,7 @@ function validateJournal(manifest: RunManifest, events: readonly RunEvent[]): vo
   let openRun = false;
   let starts = 0;
   const cases = new Map<string, CaseEvent>();
+  const transcriptions = new Set<string>();
   for (let index = 0; index < events.length; index += 1) {
     const event = events[index] as RunEvent;
     if (event.sequence !== index + 1) {
@@ -675,6 +873,23 @@ function validateJournal(manifest: RunManifest, events: readonly RunEvent[]): vo
     } else if (event.type === "run_resumed") {
       if (openRun) throw new Error(`${manifest.runId}: run_resumed while run is open`);
       openRun = true;
+    } else if (event.type === "case_transcribed") {
+      if (!openRun) throw new Error(`${manifest.runId}: transcription outside an open run`);
+      const target = targets.get(event.messageId);
+      if (!target || target.modality !== "voice") {
+        throw new Error(`${manifest.runId}: transcription for invalid ${event.messageId}`);
+      }
+      if (
+        !manifest.transcription ||
+        event.provider !== manifest.transcription.provider ||
+        event.model !== manifest.transcription.model
+      ) {
+        throw new Error(`${manifest.runId}: transcription provider mismatch`);
+      }
+      if (transcriptions.has(event.messageId)) {
+        throw new Error(`${manifest.runId}: duplicate transcription for ${event.messageId}`);
+      }
+      transcriptions.add(event.messageId);
     } else if (event.type === "case_failed" || event.type === "case_succeeded") {
       if (!openRun) throw new Error(`${manifest.runId}: case event outside an open run`);
       const target = targets.get(event.messageId);
@@ -720,7 +935,21 @@ async function buildSummary(
   const actions: Record<string, number> = {};
   const messageTypes: Record<string, number> = {};
   const failureCodes: Record<string, number> = {};
-  const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, costUsd: 0 };
+  const routingUsage = {
+    calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    costUsd: 0,
+  };
+  const transcriptionUsage = {
+    calls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    costUsd: 0,
+    durationSeconds: 0,
+  };
   let succeeded = 0;
   let failed = 0;
   for (const event of cases.values()) {
@@ -729,16 +958,38 @@ async function buildSummary(
       byModality[event.modality].succeeded += 1;
       increment(actions, event.decision.action);
       increment(messageTypes, event.decision.messageType);
-      usage.inputTokens += event.metadata?.inputTokens ?? 0;
-      usage.outputTokens += event.metadata?.outputTokens ?? 0;
-      usage.totalTokens += event.metadata?.totalTokens ?? 0;
-      usage.costUsd += event.metadata?.costUsd ?? 0;
     } else {
       failed += 1;
       byModality[event.modality].failed += 1;
       increment(failureCodes, event.error.code);
     }
   }
+  for (const event of events) {
+    if (event.type === "case_transcribed") {
+      transcriptionUsage.calls += 1;
+      transcriptionUsage.inputTokens += event.metadata?.inputTokens ?? 0;
+      transcriptionUsage.outputTokens += event.metadata?.outputTokens ?? 0;
+      transcriptionUsage.totalTokens += event.metadata?.totalTokens ?? 0;
+      transcriptionUsage.costUsd += event.metadata?.costUsd ?? 0;
+      transcriptionUsage.durationSeconds += event.metadata?.durationSeconds ?? 0;
+    } else if (event.type === "case_failed" && event.stage === "transcription") {
+      transcriptionUsage.calls += 1;
+    } else if (event.type === "case_succeeded" || event.type === "case_failed") {
+      routingUsage.calls += 1;
+      routingUsage.inputTokens += event.metadata?.inputTokens ?? 0;
+      routingUsage.outputTokens += event.metadata?.outputTokens ?? 0;
+      routingUsage.totalTokens += event.metadata?.totalTokens ?? 0;
+      routingUsage.costUsd += event.metadata?.costUsd ?? 0;
+    }
+  }
+  const usage = {
+    inputTokens: routingUsage.inputTokens + transcriptionUsage.inputTokens,
+    outputTokens: routingUsage.outputTokens + transcriptionUsage.outputTokens,
+    totalTokens: routingUsage.totalTokens + transcriptionUsage.totalTokens,
+    costUsd: routingUsage.costUsd + transcriptionUsage.costUsd,
+    routing: routingUsage,
+    transcription: transcriptionUsage,
+  };
   let completed: Extract<RunEvent, { type: "run_completed" }> | undefined;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
@@ -757,6 +1008,8 @@ async function buildSummary(
     provider: manifest.provider,
     model: manifest.model,
     promptVersion: manifest.promptVersion,
+    routingSettings: manifest.routingSettings,
+    transcription: manifest.transcription,
     partition: manifest.partition,
     baselineRunId: manifest.baselineRunId,
     notes: manifest.notes,
@@ -797,6 +1050,8 @@ function renderReport(summary: RunSummary): string {
 - Status: **${summary.status}**
 - Provider/model: \`${summary.provider}\` / \`${summary.model}\`
 - Prompt/partition: \`${summary.promptVersion}\` / \`${summary.partition}\`
+- Routing settings: reasoning \`${summary.routingSettings.reasoningEffort ?? "provider-default"}\`, max output ${summary.routingSettings.maxOutputTokens}, temperature ${summary.routingSettings.temperature ?? "provider-default"}
+- Transcription: ${summary.transcription ? `\`${summary.transcription.provider}\` / \`${summary.transcription.model}\`` : "none"}
 - Git: \`${summary.gitSha}${summary.gitDirty ? " (dirty)" : ""}\`
 - Dataset: \`${summary.datasetFingerprint}\`
 - Baseline: ${summary.baselineRunId ? `\`${summary.baselineRunId}\`` : "none"}
@@ -810,6 +1065,7 @@ ${summary.notes}
 - Failed: ${summary.failed}
 - Pending: ${summary.pending}
 - Usage: ${summary.usage.inputTokens} input / ${summary.usage.outputTokens} output tokens${summary.usage.costUsd > 0 ? ` / $${summary.usage.costUsd.toFixed(6)}` : ""}
+- Routing calls: ${summary.usage.routing.calls}; transcription calls: ${summary.usage.transcription.calls}${summary.usage.transcription.durationSeconds > 0 ? ` / ${summary.usage.transcription.durationSeconds.toFixed(2)} audio seconds` : ""}
 
 ${markdownTable([["Modality", "Total", "Succeeded", "Failed"], ...modalityRows])}
 
@@ -861,7 +1117,7 @@ function renderDashboard(
         summary.partition === "samples" && summary.succeeded > 0
           ? `<p><a href="${encodeURIComponent(summary.runId)}/sample-progress.md">Review attempted sample decisions</a></p>`
           : "";
-      return `<section id="${htmlEscape(summary.runId)}"><h2>${htmlEscape(summary.runId)}</h2><p>${htmlEscape(summary.notes)}</p>${sampleProgressLink}<p class="meta">Prompt <code>${htmlEscape(summary.promptVersion)}</code> · partition <code>${htmlEscape(summary.partition)}</code> · ${summary.usage.inputTokens} input / ${summary.usage.outputTokens} output tokens${summary.usage.costUsd > 0 ? ` · $${summary.usage.costUsd.toFixed(6)}` : ""}</p><div class="cards"><div><strong>${summary.succeeded}</strong><span>Succeeded</span></div><div><strong>${summary.failed}</strong><span>Failed</span></div><div><strong>${summary.pending}</strong><span>Pending</span></div><div><strong>${summary.total}</strong><span>Total</span></div></div><div class="bar"><i style="width:${summary.total ? (summary.succeeded / summary.total) * 100 : 0}%"></i></div><p>${comparison}</p><table><thead><tr><th>Modality</th><th>Total</th><th>Succeeded</th><th>Failed</th></tr></thead><tbody>${Object.entries(summary.byModality).map(([key, value]) => `<tr><td>${key}</td><td>${value.total}</td><td>${value.succeeded}</td><td>${value.failed}</td></tr>`).join("")}</tbody></table><details><summary>Failure details (${summary.failed})</summary><table><thead><tr><th>Message</th><th>Modality</th><th>Code</th><th>Detail</th><th>Retryable</th></tr></thead><tbody>${failureRows}</tbody></table></details><p class="meta">Dataset <code>${htmlEscape(summary.datasetFingerprint)}</code><br>Git <code>${htmlEscape(summary.gitSha)}</code>${summary.gitDirty ? " (dirty)" : ""}</p></section>`;
+      return `<section id="${htmlEscape(summary.runId)}"><h2>${htmlEscape(summary.runId)}</h2><p>${htmlEscape(summary.notes)}</p>${sampleProgressLink}<p class="meta">Prompt <code>${htmlEscape(summary.promptVersion)}</code> · reasoning <code>${htmlEscape(summary.routingSettings.reasoningEffort ?? "provider-default")}</code> · partition <code>${htmlEscape(summary.partition)}</code>${summary.transcription ? ` · STT <code>${htmlEscape(summary.transcription.model)}</code>` : ""} · ${summary.usage.inputTokens} input / ${summary.usage.outputTokens} output tokens${summary.usage.costUsd > 0 ? ` · $${summary.usage.costUsd.toFixed(6)}` : ""}<br>${summary.usage.routing.calls} routing calls · ${summary.usage.transcription.calls} transcription calls</p><div class="cards"><div><strong>${summary.succeeded}</strong><span>Succeeded</span></div><div><strong>${summary.failed}</strong><span>Failed</span></div><div><strong>${summary.pending}</strong><span>Pending</span></div><div><strong>${summary.total}</strong><span>Total</span></div></div><div class="bar"><i style="width:${summary.total ? (summary.succeeded / summary.total) * 100 : 0}%"></i></div><p>${comparison}</p><table><thead><tr><th>Modality</th><th>Total</th><th>Succeeded</th><th>Failed</th></tr></thead><tbody>${Object.entries(summary.byModality).map(([key, value]) => `<tr><td>${key}</td><td>${value.total}</td><td>${value.succeeded}</td><td>${value.failed}</td></tr>`).join("")}</tbody></table><details><summary>Failure details (${summary.failed})</summary><table><thead><tr><th>Message</th><th>Modality</th><th>Code</th><th>Detail</th><th>Retryable</th></tr></thead><tbody>${failureRows}</tbody></table></details><p class="meta">Dataset <code>${htmlEscape(summary.datasetFingerprint)}</code><br>Git <code>${htmlEscape(summary.gitSha)}</code>${summary.gitDirty ? " (dirty)" : ""}</p></section>`;
     })
     .join("\n");
   const intro = sampleHistory

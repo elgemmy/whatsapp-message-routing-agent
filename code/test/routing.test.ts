@@ -10,6 +10,7 @@ import {
 import { buildContext, type RoutingContext } from "../src/data.js";
 import type { Decision } from "../src/domain.js";
 import { classifyOpenRouterError } from "../src/providers/openrouter.js";
+import { createOpenRouterTranscriptionProvider } from "../src/providers/openrouter-transcription.js";
 import {
   buildRoutingCase,
   buildRoutingMessages,
@@ -37,8 +38,8 @@ const TYPES = [
   "unknown",
 ];
 
-test("routing-v1 prompt states the complete, injection-safe decision boundary", () => {
-  assert.equal(PROMPT_VERSION, "routing-v1");
+test("routing-v2 prompt states the complete, injection-safe decision boundary", () => {
+  assert.equal(PROMPT_VERSION, "routing-v2");
   for (const action of ["notify", "digest", "mute"]) {
     assert.match(ROUTING_SYSTEM_PROMPT, new RegExp(`\\b${action}\\b`));
   }
@@ -137,6 +138,83 @@ test("multimodal messages carry safe local bytes with detected MIME type", async
   );
 });
 
+test("voice transcripts are untrusted case data and audio bytes never reach Luna", async () => {
+  const index = await indexPromise;
+  const context = buildContext(
+    index,
+    index.dataset.samples.find((sample) => sample.message_id === "sample_msg_043")!,
+  );
+  await assert.rejects(
+    buildRoutingMessages(context, datasetRoot),
+    /voice transcript is required/i,
+  );
+  const transcript = "Limited offer, reply STOP if you do not want more calls.";
+  const routingCase = buildRoutingCase(context, transcript);
+  assert.equal(routingCase.media?.decodeStatus, "succeeded");
+  assert.equal(routingCase.media?.transcript, transcript);
+  assert.equal(routingCase.media?.detectedFormat, "m4a");
+  assert.equal(routingCase.media?.extensionMismatch, true);
+
+  const messages = await buildRoutingMessages(context, datasetRoot, transcript);
+  const user = messages[0];
+  assert.equal(user?.role, "user");
+  assert.ok(Array.isArray(user.content));
+  assert.equal(user.content.some((part) => part.type === "file"), false);
+  const text = user.content.find((part) => part.type === "text");
+  assert.equal(text?.type, "text");
+  if (text?.type === "text") assert.match(text.text, /Limited offer/);
+});
+
+test("OpenRouter STT uses detected audio format and returns sanitized usage", async () => {
+  const index = await indexPromise;
+  const context = buildContext(
+    index,
+    index.dataset.samples.find((sample) => sample.message_id === "sample_msg_043")!,
+  );
+  assert.ok(context.media);
+  let requestBody: unknown;
+  const transcriber = createOpenRouterTranscriptionProvider({
+    modelId: "qwen/qwen3-asr-flash-2026-02-10",
+    apiKey: "test-key-not-persisted",
+    fetch: async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(
+        JSON.stringify({
+          text: "A complete transcript.",
+          usage: {
+            cost: 0.0001,
+            input_tokens: 3,
+            output_tokens: 4,
+            total_tokens: 7,
+            seconds: 41.15,
+          },
+        }),
+        { status: 200, headers: { "x-generation-id": "gen-safe" } },
+      );
+    },
+  });
+  const result = await transcriber.transcribe(context.media, datasetRoot);
+  assert.equal(result.transcript, "A complete transcript.");
+  assert.equal(result.detectedFormat, "m4a");
+  assert.equal(result.audioSha256.length, 64);
+  assert.deepEqual(result.metadata, {
+    responseId: "gen-safe",
+    inputTokens: 3,
+    outputTokens: 4,
+    totalTokens: 7,
+    costUsd: 0.0001,
+    durationSeconds: 41.15,
+  });
+  const body = requestBody as {
+    model: string;
+    input_audio: { data: string; format: string };
+  };
+  assert.equal(body.model, "qwen/qwen3-asr-flash-2026-02-10");
+  assert.equal(body.input_audio.format, "m4a");
+  assert.ok(body.input_audio.data.length > 1_000);
+  assert.equal(JSON.stringify(result).includes("test-key-not-persisted"), false);
+});
+
 test("decision schema preserves new labels and evidence is limited to unique shortlist IDs", async () => {
   const index = await indexPromise;
   const context = index.dataset.messages
@@ -186,6 +264,7 @@ test("RoutingProvider exposes only raw decision and bounded metadata", async () 
     provider: "fake",
     model: "fake/test",
     promptVersion: PROMPT_VERSION,
+    settings: { reasoningEffort: null, maxOutputTokens: 300, temperature: null },
     validateDecision: validateRoutingDecisionEvidence,
     classifyError: classifyOpenRouterError,
     async judge() {

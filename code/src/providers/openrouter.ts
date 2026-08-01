@@ -125,6 +125,7 @@ export type OpenRouterRoutingProviderOptions = {
   maxRetries?: number;
   temperature?: number;
   maxOutputTokens?: number;
+  reasoningEffort?: "max" | "xhigh" | "high" | "medium" | "low" | "minimal" | "none";
 };
 
 function finiteNumber(value: unknown): number | undefined {
@@ -176,22 +177,36 @@ export function createOpenRouterRoutingProvider(
     compatibility: "strict",
     ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
   });
+  const reasoningEffort = options.reasoningEffort ?? "max";
+  const maxOutputTokens = options.maxOutputTokens ?? 2_000;
   const model = openrouter(modelId, {
     provider: { require_parameters: true },
     usage: { include: true },
+    // The installed adapter's typed union predates OpenRouter's literal "max".
+    // extraBody is the adapter's documented path for current raw API fields.
+    extraBody: { reasoning: { effort: reasoningEffort, exclude: true } },
   });
 
   return {
     provider: "openrouter",
     model: modelId,
     promptVersion: PROMPT_VERSION,
+    settings: {
+      reasoningEffort,
+      maxOutputTokens,
+      temperature: options.temperature ?? null,
+    },
     validateDecision: validateRoutingDecisionEvidence,
     classifyError: classifyOpenRouterError,
-    async judge(context: RoutingContext, datasetRoot: string) {
+    async judge(
+      context: RoutingContext,
+      datasetRoot: string,
+      voiceTranscript?: string,
+    ) {
       const result = await generateText({
         model,
         instructions: ROUTING_SYSTEM_PROMPT,
-        messages: await buildRoutingMessages(context, datasetRoot),
+        messages: await buildRoutingMessages(context, datasetRoot, voiceTranscript),
         output: Output.object({
           schema: RoutingDecisionOutputSchema,
           name: "routing_decision",
@@ -202,7 +217,7 @@ export function createOpenRouterRoutingProvider(
         ...(options.temperature !== undefined
           ? { temperature: options.temperature }
           : {}),
-        maxOutputTokens: options.maxOutputTokens ?? 300,
+        maxOutputTokens,
       });
       return {
         rawDecision: result.output,

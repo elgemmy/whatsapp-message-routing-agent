@@ -66,3 +66,15 @@ Status: accepted after first live smoke; do not expand to voice or targets yet
 - Live smoke `luna-routing-v1-smoke-3` attempted eight non-audio samples: seven technical successes and one repeated `invalid_output`; among successful predictions, action was correct for 5/7, type for 6/7, and exact action plus type for 5/7.
 - Two image reasons reached the 240-character schema ceiling and ended abruptly. Treat this as a prompt/schema quality issue before broad evaluation, not as an acceptable final explanation.
 - Do not resume the full 30 samples or 110 targets until the STT path exists. Continue with explicit non-audio IDs and inspect `sample-progress.md` after each bounded run.
+
+## 2026-08-02 — Qwen STT and Luna Max complete-sample baseline
+
+Status: accepted for gradual sample evaluation
+
+- Use OpenRouter's dedicated `/api/v1/audio/transcriptions` endpoint with `qwen/qwen3-asr-flash-2026-02-10`. Qwen was selected over `x-ai/grok-stt-1.0` for its documented multilingual, dialect, background-music, noisy, and far-field coverage; both remain interchangeable configuration candidates for a later measured comparison.
+- Keep one primary router. Voice notes receive one bounded STT call, then the journaled transcript becomes untrusted media context for Luna. This is a tool call, not a second routing agent. Do not send audio bytes to Luna.
+- Journal a successful transcript before routing, including the STT model, media hash, detected format, duration, and bounded usage. Resume and Luna retries reuse that event. A crash after the provider responds but before the event is fsynced may still rebill once; provider-side idempotency is outside the harness.
+- Request Luna reasoning effort `max` through the OpenRouter adapter's documented raw `extraBody` escape hatch. The installed adapter's convenience type currently omits the literal `max`, although OpenRouter's current API accepts it.
+- Advance to prompt `routing-v2`, require one complete concise reason, increase the reason schema ceiling from 240 to 400 characters, and allow up to 2,000 output tokens so Max reasoning does not inherit the earlier truncation-prone ceiling.
+- Run manifests now bind routing effort/output settings and transcription provider/model. Run summaries distinguish routing calls from transcription calls and aggregate all journaled call metadata, including locally invalid routing attempts.
+- Keep separate Gemini image comprehension deferred. First complete all 30 supplied samples with Luna image input and compare the image cases before adding another model call.
