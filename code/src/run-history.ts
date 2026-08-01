@@ -141,6 +141,7 @@ const CaseTranscribedEventSchema = z
     transcript: z.string().trim().min(1),
     audioSha256: z.string().length(64),
     detectedFormat: z.string().min(1),
+    transcriptionFormat: z.string().min(1),
     metadata: TranscriptionMetadataSchema.optional(),
   })
   .strict();
@@ -226,14 +227,16 @@ export type RunSummary = {
     totalTokens: number;
     costUsd: number;
     routing: {
-      calls: number;
+      attempts: number;
+      reportedUsageAttempts: number;
       inputTokens: number;
       outputTokens: number;
       totalTokens: number;
       costUsd: number;
     };
     transcription: {
-      calls: number;
+      attempts: number;
+      reportedUsageAttempts: number;
       inputTokens: number;
       outputTokens: number;
       totalTokens: number;
@@ -645,6 +648,7 @@ export async function createOrResumeRun(args: {
               transcript: transcription.transcript,
               audioSha256: transcription.audioSha256,
               detectedFormat: transcription.detectedFormat,
+              transcriptionFormat: transcription.transcriptionFormat,
               ...(transcription.metadata
                 ? { metadata: transcription.metadata }
                 : {}),
@@ -712,11 +716,12 @@ export async function createOrResumeRun(args: {
               }
             : args.provider.classifyError(error);
         const metadata =
-          typeof error === "object" &&
-          error !== null &&
-          "routingValidationFailure" in error &&
-          "metadata" in error
-            ? (error.metadata as RoutingCallMetadata | undefined)
+          typeof error === "object" && error !== null
+            ? "routingValidationFailure" in error && "metadata" in error
+              ? (error.metadata as RoutingCallMetadata | undefined)
+              : "routingMetadata" in error
+                ? (error.routingMetadata as RoutingCallMetadata | undefined)
+                : undefined
             : undefined;
         await appendEvent(eventsPath, {
           type: "case_failed",
@@ -936,14 +941,16 @@ async function buildSummary(
   const messageTypes: Record<string, number> = {};
   const failureCodes: Record<string, number> = {};
   const routingUsage = {
-    calls: 0,
+    attempts: 0,
+    reportedUsageAttempts: 0,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
     costUsd: 0,
   };
   const transcriptionUsage = {
-    calls: 0,
+    attempts: 0,
+    reportedUsageAttempts: 0,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
@@ -966,16 +973,18 @@ async function buildSummary(
   }
   for (const event of events) {
     if (event.type === "case_transcribed") {
-      transcriptionUsage.calls += 1;
+      transcriptionUsage.attempts += 1;
+      transcriptionUsage.reportedUsageAttempts += Number(event.metadata !== undefined);
       transcriptionUsage.inputTokens += event.metadata?.inputTokens ?? 0;
       transcriptionUsage.outputTokens += event.metadata?.outputTokens ?? 0;
       transcriptionUsage.totalTokens += event.metadata?.totalTokens ?? 0;
       transcriptionUsage.costUsd += event.metadata?.costUsd ?? 0;
       transcriptionUsage.durationSeconds += event.metadata?.durationSeconds ?? 0;
     } else if (event.type === "case_failed" && event.stage === "transcription") {
-      transcriptionUsage.calls += 1;
+      transcriptionUsage.attempts += 1;
     } else if (event.type === "case_succeeded" || event.type === "case_failed") {
-      routingUsage.calls += 1;
+      routingUsage.attempts += 1;
+      routingUsage.reportedUsageAttempts += Number(event.metadata !== undefined);
       routingUsage.inputTokens += event.metadata?.inputTokens ?? 0;
       routingUsage.outputTokens += event.metadata?.outputTokens ?? 0;
       routingUsage.totalTokens += event.metadata?.totalTokens ?? 0;
@@ -1065,7 +1074,7 @@ ${summary.notes}
 - Failed: ${summary.failed}
 - Pending: ${summary.pending}
 - Usage: ${summary.usage.inputTokens} input / ${summary.usage.outputTokens} output tokens${summary.usage.costUsd > 0 ? ` / $${summary.usage.costUsd.toFixed(6)}` : ""}
-- Routing calls: ${summary.usage.routing.calls}; transcription calls: ${summary.usage.transcription.calls}${summary.usage.transcription.durationSeconds > 0 ? ` / ${summary.usage.transcription.durationSeconds.toFixed(2)} audio seconds` : ""}
+- Routing attempts: ${summary.usage.routing.attempts} (${summary.usage.routing.reportedUsageAttempts} with reported usage); transcription attempts: ${summary.usage.transcription.attempts} (${summary.usage.transcription.reportedUsageAttempts} with reported usage)${summary.usage.transcription.durationSeconds > 0 ? ` / ${summary.usage.transcription.durationSeconds.toFixed(2)} audio seconds` : ""}
 
 ${markdownTable([["Modality", "Total", "Succeeded", "Failed"], ...modalityRows])}
 
@@ -1117,7 +1126,7 @@ function renderDashboard(
         summary.partition === "samples" && summary.succeeded > 0
           ? `<p><a href="${encodeURIComponent(summary.runId)}/sample-progress.md">Review attempted sample decisions</a></p>`
           : "";
-      return `<section id="${htmlEscape(summary.runId)}"><h2>${htmlEscape(summary.runId)}</h2><p>${htmlEscape(summary.notes)}</p>${sampleProgressLink}<p class="meta">Prompt <code>${htmlEscape(summary.promptVersion)}</code> · reasoning <code>${htmlEscape(summary.routingSettings.reasoningEffort ?? "provider-default")}</code> · partition <code>${htmlEscape(summary.partition)}</code>${summary.transcription ? ` · STT <code>${htmlEscape(summary.transcription.model)}</code>` : ""} · ${summary.usage.inputTokens} input / ${summary.usage.outputTokens} output tokens${summary.usage.costUsd > 0 ? ` · $${summary.usage.costUsd.toFixed(6)}` : ""}<br>${summary.usage.routing.calls} routing calls · ${summary.usage.transcription.calls} transcription calls</p><div class="cards"><div><strong>${summary.succeeded}</strong><span>Succeeded</span></div><div><strong>${summary.failed}</strong><span>Failed</span></div><div><strong>${summary.pending}</strong><span>Pending</span></div><div><strong>${summary.total}</strong><span>Total</span></div></div><div class="bar"><i style="width:${summary.total ? (summary.succeeded / summary.total) * 100 : 0}%"></i></div><p>${comparison}</p><table><thead><tr><th>Modality</th><th>Total</th><th>Succeeded</th><th>Failed</th></tr></thead><tbody>${Object.entries(summary.byModality).map(([key, value]) => `<tr><td>${key}</td><td>${value.total}</td><td>${value.succeeded}</td><td>${value.failed}</td></tr>`).join("")}</tbody></table><details><summary>Failure details (${summary.failed})</summary><table><thead><tr><th>Message</th><th>Modality</th><th>Code</th><th>Detail</th><th>Retryable</th></tr></thead><tbody>${failureRows}</tbody></table></details><p class="meta">Dataset <code>${htmlEscape(summary.datasetFingerprint)}</code><br>Git <code>${htmlEscape(summary.gitSha)}</code>${summary.gitDirty ? " (dirty)" : ""}</p></section>`;
+      return `<section id="${htmlEscape(summary.runId)}"><h2>${htmlEscape(summary.runId)}</h2><p>${htmlEscape(summary.notes)}</p>${sampleProgressLink}<p class="meta">Prompt <code>${htmlEscape(summary.promptVersion)}</code> · reasoning <code>${htmlEscape(summary.routingSettings.reasoningEffort ?? "provider-default")}</code> · partition <code>${htmlEscape(summary.partition)}</code>${summary.transcription ? ` · STT <code>${htmlEscape(summary.transcription.model)}</code>` : ""} · ${summary.usage.inputTokens} input / ${summary.usage.outputTokens} output tokens${summary.usage.costUsd > 0 ? ` · $${summary.usage.costUsd.toFixed(6)}` : ""}<br>${summary.usage.routing.attempts} routing attempts (${summary.usage.routing.reportedUsageAttempts} with usage) · ${summary.usage.transcription.attempts} transcription attempts (${summary.usage.transcription.reportedUsageAttempts} with usage)</p><div class="cards"><div><strong>${summary.succeeded}</strong><span>Succeeded</span></div><div><strong>${summary.failed}</strong><span>Failed</span></div><div><strong>${summary.pending}</strong><span>Pending</span></div><div><strong>${summary.total}</strong><span>Total</span></div></div><div class="bar"><i style="width:${summary.total ? (summary.succeeded / summary.total) * 100 : 0}%"></i></div><p>${comparison}</p><table><thead><tr><th>Modality</th><th>Total</th><th>Succeeded</th><th>Failed</th></tr></thead><tbody>${Object.entries(summary.byModality).map(([key, value]) => `<tr><td>${key}</td><td>${value.total}</td><td>${value.succeeded}</td><td>${value.failed}</td></tr>`).join("")}</tbody></table><details><summary>Failure details (${summary.failed})</summary><table><thead><tr><th>Message</th><th>Modality</th><th>Code</th><th>Detail</th><th>Retryable</th></tr></thead><tbody>${failureRows}</tbody></table></details><p class="meta">Dataset <code>${htmlEscape(summary.datasetFingerprint)}</code><br>Git <code>${htmlEscape(summary.gitSha)}</code>${summary.gitDirty ? " (dirty)" : ""}</p></section>`;
     })
     .join("\n");
   const intro = sampleHistory

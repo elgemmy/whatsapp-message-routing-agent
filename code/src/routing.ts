@@ -63,6 +63,7 @@ export type TranscriptionResult = {
   transcript: string;
   audioSha256: string;
   detectedFormat: MediaFormat;
+  transcriptionFormat: string;
   metadata?: TranscriptionCallMetadata;
 };
 
@@ -171,10 +172,6 @@ const MEDIA_TYPES: Partial<Record<MediaFormat, string>> = {
   png: "image/png",
   webp: "image/webp",
   avif: "image/avif",
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  m4a: "audio/mp4",
-  mp4: "audio/mp4",
 };
 
 export async function buildRoutingMessages(

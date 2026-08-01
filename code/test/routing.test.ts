@@ -9,7 +9,10 @@ import {
 } from "ai";
 import { buildContext, type RoutingContext } from "../src/data.js";
 import type { Decision } from "../src/domain.js";
-import { classifyOpenRouterError } from "../src/providers/openrouter.js";
+import {
+  classifyOpenRouterError,
+  createOpenRouterRoutingProvider,
+} from "../src/providers/openrouter.js";
 import { createOpenRouterTranscriptionProvider } from "../src/providers/openrouter-transcription.js";
 import {
   buildRoutingCase,
@@ -173,10 +176,14 @@ test("OpenRouter STT uses detected audio format and returns sanitized usage", as
   );
   assert.ok(context.media);
   let requestBody: unknown;
+  let requestUrl = "";
+  let requestHeaders = new Headers();
   const transcriber = createOpenRouterTranscriptionProvider({
     modelId: "qwen/qwen3-asr-flash-2026-02-10",
     apiKey: "test-key-not-persisted",
-    fetch: async (_input, init) => {
+    fetch: async (input, init) => {
+      requestUrl = String(input);
+      requestHeaders = new Headers(init?.headers);
       requestBody = JSON.parse(String(init?.body));
       return new Response(
         JSON.stringify({
@@ -196,6 +203,7 @@ test("OpenRouter STT uses detected audio format and returns sanitized usage", as
   const result = await transcriber.transcribe(context.media, datasetRoot);
   assert.equal(result.transcript, "A complete transcript.");
   assert.equal(result.detectedFormat, "m4a");
+  assert.equal(result.transcriptionFormat, "m4a");
   assert.equal(result.audioSha256.length, 64);
   assert.deepEqual(result.metadata, {
     responseId: "gen-safe",
@@ -212,7 +220,39 @@ test("OpenRouter STT uses detected audio format and returns sanitized usage", as
   assert.equal(body.model, "qwen/qwen3-asr-flash-2026-02-10");
   assert.equal(body.input_audio.format, "m4a");
   assert.ok(body.input_audio.data.length > 1_000);
+  assert.equal(requestUrl, "https://openrouter.ai/api/v1/audio/transcriptions");
+  assert.equal(requestHeaders.get("content-type"), "application/json");
+  assert.equal(requestHeaders.get("authorization"), "Bearer test-key-not-persisted");
   assert.equal(JSON.stringify(result).includes("test-key-not-persisted"), false);
+
+  const unknownDetection = await transcriber.transcribe(
+    { ...context.media, detectedFormat: "unknown", declaredFormat: "mp3" },
+    datasetRoot,
+  );
+  assert.equal(unknownDetection.detectedFormat, "unknown");
+  assert.equal(unknownDetection.transcriptionFormat, "mp3");
+
+  const rejected = createOpenRouterTranscriptionProvider({
+    modelId: "qwen/qwen3-asr-flash-2026-02-10",
+    apiKey: "test-key-not-persisted",
+    fetch: async () => new Response("bad request", { status: 400 }),
+  });
+  let rejection: unknown;
+  try {
+    await rejected.transcribe(context.media, datasetRoot);
+  } catch (error) {
+    rejection = error;
+  }
+  assert.deepEqual(rejected.classifyError(rejection), {
+    code: "transcription_rejected",
+    message: "OpenRouter rejected the transcription request.",
+    retryable: true,
+    stopRun: true,
+  });
+  assert.equal(
+    rejected.classifyError(new DOMException("deadline", "TimeoutError")).code,
+    "transcription_network_error",
+  );
 });
 
 test("decision schema preserves new labels and evidence is limited to unique shortlist IDs", async () => {
@@ -292,6 +332,116 @@ test("RoutingProvider exposes only raw decision and bounded metadata", async () 
   assert.deepEqual(Object.keys(result).sort(), ["metadata", "rawDecision"]);
   assert.equal(result.metadata?.totalTokens, 120);
   assert.equal("requestBody" in (result.metadata ?? {}), false);
+});
+
+test("OpenRouter routing sends literal Max reasoning through the adapter", async () => {
+  const index = await indexPromise;
+  const context = buildContext(index, index.dataset.samples[0]!);
+  let requestBody: Record<string, unknown> | undefined;
+  const provider = createOpenRouterRoutingProvider({
+    modelId: "openai/gpt-5.6-luna",
+    apiKey: "test-key-not-persisted",
+    maxRetries: 0,
+    fetch: async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          id: "gen-routing-safe",
+          model: "openai/gpt-5.6-luna",
+          object: "chat.completion",
+          created: 1,
+          choices: [
+            {
+              index: 0,
+              finish_reason: "stop",
+              message: {
+                role: "assistant",
+                content: JSON.stringify({
+                  action: "notify",
+                  messageType: "urgent",
+                  reason: "A trusted admin sent a time-sensitive update.",
+                  confidence: 0.9,
+                  evidenceMessageIds: [],
+                }),
+              },
+            },
+          ],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    },
+  });
+  const result = await provider.judge(context, datasetRoot);
+  assert.deepEqual(result.rawDecision, {
+    action: "notify",
+    messageType: "urgent",
+    reason: "A trusted admin sent a time-sensitive update.",
+    confidence: 0.9,
+    evidenceMessageIds: [],
+  });
+  assert.deepEqual(requestBody?.reasoning, { effort: "max", exclude: true });
+  assert.equal(requestBody?.max_tokens, 2_000);
+  assert.deepEqual(provider.settings, {
+    reasoningEffort: "max",
+    maxOutputTokens: 2_000,
+    temperature: null,
+  });
+});
+
+test("invalid structured output retains bounded failed-call usage", async () => {
+  const index = await indexPromise;
+  const context = buildContext(index, index.dataset.samples[0]!);
+  const provider = createOpenRouterRoutingProvider({
+    modelId: "openai/gpt-5.6-luna",
+    apiKey: "test-key-not-persisted",
+    maxRetries: 0,
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          id: "gen-invalid-safe",
+          model: "openai/gpt-5.6-luna",
+          object: "chat.completion",
+          created: 1,
+          choices: [
+            {
+              index: 0,
+              finish_reason: "length",
+              message: { role: "assistant", content: "not-json" },
+            },
+          ],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 20,
+            total_tokens: 30,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+  });
+  let failure: unknown;
+  try {
+    await provider.judge(context, datasetRoot);
+  } catch (error) {
+    failure = error;
+  }
+  assert.equal(classifyOpenRouterError(failure).code, "invalid_output");
+  assert.deepEqual(
+    (failure as { routingMetadata?: unknown }).routingMetadata,
+    {
+      responseId: "gen-invalid-safe",
+      finishReason: "length",
+      rawFinishReason: "length",
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 30,
+    },
+  );
+  assert.equal(JSON.stringify(failure).includes("not-json"), false);
 });
 
 test("provider errors are reduced to stable retry policy without raw payloads", () => {

@@ -110,8 +110,8 @@ function httpFailure(status: number): OpenRouterTranscriptionError {
   return new OpenRouterTranscriptionError(
     "transcription_rejected",
     "OpenRouter rejected the transcription request.",
-    false,
-    false,
+    true,
+    true,
   );
 }
 
@@ -143,7 +143,8 @@ export function createOpenRouterTranscriptionProvider(
         };
       }
       if (
-        (error instanceof DOMException && error.name === "AbortError") ||
+        (error instanceof DOMException &&
+          (error.name === "AbortError" || error.name === "TimeoutError")) ||
         (error instanceof Error && /timeout|timed out|network|fetch failed/i.test(error.message))
       ) {
         return {
@@ -176,11 +177,11 @@ export function createOpenRouterTranscriptionProvider(
           false,
         );
       }
-      const detectedFormat =
+      const transcriptionFormat =
         media.detectedFormat === "unknown"
           ? media.declaredFormat
           : media.detectedFormat;
-      const format = TRANSCRIPTION_FORMATS[detectedFormat];
+      const format = TRANSCRIPTION_FORMATS[transcriptionFormat];
       if (format === undefined) {
         throw new OpenRouterTranscriptionError(
           "transcription_format_unsupported",
@@ -222,7 +223,8 @@ export function createOpenRouterTranscriptionProvider(
       return {
         transcript: parsed.text,
         audioSha256,
-        detectedFormat,
+        detectedFormat: media.detectedFormat,
+        transcriptionFormat: format,
         ...(metadata ? { metadata } : {}),
       };
     },

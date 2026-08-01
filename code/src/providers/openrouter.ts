@@ -31,7 +31,25 @@ export type ClassifiedOpenRouterError = {
   stopRun?: boolean;
 };
 
+type OpenRouterFailureEnvelope = {
+  openRouterFailure: unknown;
+  routingMetadata?: RoutingCallMetadata;
+};
+
+function isOpenRouterFailureEnvelope(
+  error: unknown,
+): error is OpenRouterFailureEnvelope {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "openRouterFailure" in error
+  );
+}
+
 export function classifyOpenRouterError(error: unknown): ClassifiedOpenRouterError {
+  if (isOpenRouterFailureEnvelope(error)) {
+    return classifyOpenRouterError(error.openRouterFailure);
+  }
   if (RetryError.isInstance(error)) return classifyOpenRouterError(error.lastError);
   if (LoadAPIKeyError.isInstance(error)) {
     return { code: "missing_api_key", message: "OpenRouter API key is missing.", retryable: true, stopRun: true };
@@ -110,7 +128,8 @@ export function classifyOpenRouterError(error: unknown): ClassifiedOpenRouterErr
     return { code: "network_error", message: "OpenRouter returned an empty response.", retryable: true, stopRun: true };
   }
   if (
-    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof DOMException &&
+      (error.name === "AbortError" || error.name === "TimeoutError")) ||
     (error instanceof Error && /timeout|timed out|network|fetch failed/i.test(error.message))
   ) {
     return { code: "network_error", message: "OpenRouter request timed out or lost its connection.", retryable: true, stopRun: true };
@@ -126,6 +145,7 @@ export type OpenRouterRoutingProviderOptions = {
   temperature?: number;
   maxOutputTokens?: number;
   reasoningEffort?: "max" | "xhigh" | "high" | "medium" | "low" | "minimal" | "none";
+  fetch?: typeof globalThis.fetch;
 };
 
 function finiteNumber(value: unknown): number | undefined {
@@ -159,7 +179,7 @@ function safeMetadata(result: {
     ...(outputTokens !== undefined ? { outputTokens } : {}),
     ...(totalTokens !== undefined ? { totalTokens } : {}),
     ...(costUsd !== undefined ? { costUsd } : {}),
-    ...(typeof openrouter?.provider === "string"
+    ...(typeof openrouter?.provider === "string" && openrouter.provider !== ""
       ? { routedProvider: openrouter.provider }
       : {}),
     ...(result.warnings && result.warnings.length > 0
@@ -176,6 +196,7 @@ export function createOpenRouterRoutingProvider(
   const openrouter = createOpenRouter({
     compatibility: "strict",
     ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+    ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
   });
   const reasoningEffort = options.reasoningEffort ?? "max";
   const maxOutputTokens = options.maxOutputTokens ?? 2_000;
@@ -203,24 +224,55 @@ export function createOpenRouterRoutingProvider(
       datasetRoot: string,
       voiceTranscript?: string,
     ) {
-      const result = await generateText({
-        model,
-        instructions: ROUTING_SYSTEM_PROMPT,
-        messages: await buildRoutingMessages(context, datasetRoot, voiceTranscript),
-        output: Output.object({
-          schema: RoutingDecisionOutputSchema,
-          name: "routing_decision",
-          description: "A personalized message notification routing decision.",
-        }),
-        timeout: options.timeoutMs ?? 60_000,
-        maxRetries: options.maxRetries ?? 2,
-        ...(options.temperature !== undefined
-          ? { temperature: options.temperature }
-          : {}),
-        maxOutputTokens,
-      });
+      let result: Awaited<ReturnType<typeof generateText>>;
+      try {
+        result = await generateText({
+          model,
+          instructions: ROUTING_SYSTEM_PROMPT,
+          messages: await buildRoutingMessages(context, datasetRoot, voiceTranscript),
+          output: Output.object({
+            schema: RoutingDecisionOutputSchema,
+            name: "routing_decision",
+            description: "A personalized message notification routing decision.",
+          }),
+          timeout: options.timeoutMs ?? 60_000,
+          maxRetries: options.maxRetries ?? 2,
+          ...(options.temperature !== undefined
+            ? { temperature: options.temperature }
+            : {}),
+          maxOutputTokens,
+        });
+      } catch (error) {
+        if (NoObjectGeneratedError.isInstance(error) && error.usage) {
+          throw {
+            openRouterFailure: error,
+            routingMetadata: safeMetadata({
+              response: error.response ?? {},
+              finishReason: error.finishReason ?? "unknown",
+              usage: error.usage,
+            }),
+          } satisfies OpenRouterFailureEnvelope;
+        }
+        throw error;
+      }
+      let rawDecision: unknown;
+      try {
+        rawDecision = result.output;
+      } catch (error) {
+        throw {
+          openRouterFailure: error,
+          routingMetadata: safeMetadata({
+            response: result.finalStep.response,
+            finishReason: result.finishReason,
+            rawFinishReason: result.rawFinishReason,
+            usage: result.usage,
+            warnings: result.warnings,
+            providerMetadata: result.finalStep.providerMetadata,
+          }),
+        } satisfies OpenRouterFailureEnvelope;
+      }
       return {
-        rawDecision: result.output,
+        rawDecision,
         metadata: safeMetadata({
           response: result.finalStep.response,
           finishReason: result.finishReason,

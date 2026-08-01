@@ -401,6 +401,7 @@ test("voice transcription is journaled once and reused after routing failure", a
         transcript: "Today only, get a discount. Reply STOP to unsubscribe.",
         audioSha256: "a".repeat(64),
         detectedFormat: "m4a",
+        transcriptionFormat: "m4a",
         metadata: { costUsd: 0.0002, durationSeconds: 41.15 },
       };
     },
@@ -453,8 +454,10 @@ test("voice transcription is journaled once and reused after routing failure", a
   assert.equal(failed.status, "failed");
   assert.equal(transcriptionCalls, 1);
   assert.equal(routingCalls, 1);
-  assert.equal(failed.usage.transcription.calls, 1);
-  assert.equal(failed.usage.routing.calls, 1);
+  assert.equal(failed.usage.transcription.attempts, 1);
+  assert.equal(failed.usage.transcription.reportedUsageAttempts, 1);
+  assert.equal(failed.usage.routing.attempts, 1);
+  assert.equal(failed.usage.routing.reportedUsageAttempts, 1);
   assert.equal(failed.usage.costUsd, 0.0002);
 
   transcriptionCalls = 0;
@@ -468,8 +471,8 @@ test("voice transcription is journaled once and reused after routing failure", a
   assert.equal(completed.status, "succeeded");
   assert.equal(transcriptionCalls, 0, "routing retry must reuse journaled transcript");
   assert.equal(routingCalls, 1);
-  assert.equal(completed.usage.transcription.calls, 1);
-  assert.equal(completed.usage.routing.calls, 2);
+  assert.equal(completed.usage.transcription.attempts, 1);
+  assert.equal(completed.usage.routing.attempts, 2);
   const events = await readRunEvents(
     path.join(temporaryRoot, "voice-reuse", "events.jsonl"),
   );
