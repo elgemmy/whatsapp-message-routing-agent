@@ -13,6 +13,7 @@ import {
   createSeedSampleEvaluation,
   makeDeliberatelyWrongSamplePredictions,
   writeSampleRunEvaluation,
+  writeSampleRunProgress,
 } from "../src/evaluate.js";
 import { PredictionRowSchema, type PredictionRow } from "../src/domain.js";
 import { indexPromise } from "./helpers.js";
@@ -133,4 +134,33 @@ test("writes post-inference sample metrics beside a provider run", async (t) => 
     await readFile(path.join(temporaryRoot, "sample-report.md"), "utf8"),
     /labels were not included in provider prompts/,
   );
+});
+
+test("writes readable partial sample progress with failures kept separate", async (t) => {
+  const index = await indexPromise;
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-progress-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const prediction = makeDeliberatelyWrongSamplePredictions(index.dataset.samples)[0]!;
+  const progress = await writeSampleRunProgress({
+    samples: index.dataset.samples,
+    outcomes: [
+      { status: "succeeded", prediction },
+      {
+        status: "failed",
+        messageId: index.dataset.samples[1]!.message_id,
+        attempt: 2,
+        error: { code: "invalid_output", message: "Invalid structured output." },
+      },
+    ],
+    runDir: temporaryRoot,
+  });
+  assert.equal(progress.attempted, 2);
+  assert.equal(progress.technicalSucceeded, 1);
+  assert.equal(progress.technicalFailed, 1);
+  assert.equal(progress.evaluation.total, 1);
+  const report = await readFile(path.join(temporaryRoot, "sample-progress.md"), "utf8");
+  assert.match(report, /Accuracy below uses technically successful predictions only/);
+  assert.match(report, /semantic mismatch/);
+  assert.match(report, /technical failure/);
+  await access(path.join(temporaryRoot, "sample-progress.json"));
 });

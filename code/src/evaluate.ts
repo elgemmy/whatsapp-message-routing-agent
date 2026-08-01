@@ -29,6 +29,26 @@ export type SampleEvaluation = {
   cases: EvaluationCase[];
 };
 
+export type SampleProgressOutcome =
+  | { status: "succeeded"; prediction: PredictionRow }
+  | {
+      status: "failed";
+      messageId: string;
+      attempt: number;
+      error: { code: string; message: string };
+    };
+
+export type SampleProgress = {
+  label: "illustrative_sample_progress";
+  totalAvailable: number;
+  attempted: number;
+  technicalSucceeded: number;
+  technicalFailed: number;
+  remaining: number;
+  evaluation: SampleEvaluation;
+  failures: Array<Extract<SampleProgressOutcome, { status: "failed" }>>;
+};
+
 export function evaluateSamples(
   samples: readonly SampleMessage[],
   predictionRows: readonly unknown[],
@@ -317,4 +337,99 @@ ${caseRows}
 `,
   );
   return evaluation;
+}
+
+export async function writeSampleRunProgress(args: {
+  samples: readonly SampleMessage[];
+  outcomes: readonly SampleProgressOutcome[];
+  runDir: string;
+}): Promise<SampleProgress> {
+  const sampleById = new Map(args.samples.map((sample) => [sample.message_id, sample]));
+  const successful = args.outcomes.filter(
+    (outcome): outcome is Extract<SampleProgressOutcome, { status: "succeeded" }> =>
+      outcome.status === "succeeded",
+  );
+  const failures = args.outcomes.filter(
+    (outcome): outcome is Extract<SampleProgressOutcome, { status: "failed" }> =>
+      outcome.status === "failed",
+  );
+  const successfulSamples = successful.map((outcome) => {
+    const sample = sampleById.get(outcome.prediction.message_id);
+    if (!sample) throw new Error(`Unknown sample progress ID: ${outcome.prediction.message_id}`);
+    return sample;
+  });
+  for (const failure of failures) {
+    if (!sampleById.has(failure.messageId)) {
+      throw new Error(`Unknown sample progress ID: ${failure.messageId}`);
+    }
+  }
+  const evaluation = evaluateSamples(
+    successfulSamples,
+    successful.map((outcome) => outcome.prediction),
+  );
+  const progress: SampleProgress = {
+    label: "illustrative_sample_progress",
+    totalAvailable: args.samples.length,
+    attempted: args.outcomes.length,
+    technicalSucceeded: successful.length,
+    technicalFailed: failures.length,
+    remaining: args.samples.length - args.outcomes.length,
+    evaluation,
+    failures,
+  };
+  const outcomeById = new Map(
+    args.outcomes.map((outcome) => [
+      outcome.status === "succeeded"
+        ? outcome.prediction.message_id
+        : outcome.messageId,
+      outcome,
+    ]),
+  );
+  const sections = args.samples
+    .filter((sample) => outcomeById.has(sample.message_id))
+    .map((sample) => {
+      const outcome = outcomeById.get(sample.message_id) as SampleProgressOutcome;
+      if (outcome.status === "failed") {
+        return `## ${escapeMarkdown(sample.message_id)} — technical failure
+
+- Expected: \`${sample.action} / ${sample.message_type}\`
+- Attempt: ${outcome.attempt}
+- Error: \`${escapeMarkdown(outcome.error.code)}\` — ${escapeMarkdown(outcome.error.message)}`;
+      }
+      const prediction = outcome.prediction;
+      const exact =
+        prediction.action === sample.action &&
+        prediction.message_type === sample.message_type;
+      return `## ${escapeMarkdown(sample.message_id)} — ${exact ? "exact match" : "semantic mismatch"}
+
+- Expected: \`${sample.action} / ${sample.message_type}\`
+- Predicted: \`${prediction.action} / ${prediction.message_type}\`
+- Confidence: ${prediction.confidence}
+- Evidence: \`${escapeMarkdown(prediction.evidence_message_ids)}\`
+- Reason: ${escapeMarkdown(prediction.reason)}`;
+    })
+    .join("\n\n");
+  const runDir = path.resolve(args.runDir);
+  await mkdir(runDir, { recursive: true });
+  await atomicWrite(
+    path.join(runDir, "sample-progress.json"),
+    `${JSON.stringify(progress, null, 2)}\n`,
+  );
+  await atomicWrite(
+    path.join(runDir, "sample-progress.md"),
+    `# Provider sample progress
+
+This is an **illustrative partial regression**, evaluated only after inference. Sample labels were not included in provider prompts. Accuracy below uses technically successful predictions only; failures are reported separately.
+
+- Attempted: ${progress.attempted}/${progress.totalAvailable}
+- Technical success: ${progress.technicalSucceeded}/${progress.attempted}
+- Technical failure: ${progress.technicalFailed}/${progress.attempted}
+- Action correct among successful: ${evaluation.actionCorrect}/${evaluation.total}
+- Message type correct among successful: ${evaluation.messageTypeCorrect}/${evaluation.total}
+- Exact action + type among successful: ${evaluation.exactCorrect}/${evaluation.total}
+
+${sections}
+`,
+  );
+  return progress;
 }

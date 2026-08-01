@@ -6,11 +6,14 @@ import { buildDatasetIndex, fingerprintDataset, loadDataset } from "./data.js";
 import {
   createSeedSampleEvaluation,
   writeSampleRunEvaluation,
+  writeSampleRunProgress,
 } from "./evaluate.js";
+import { decisionToPrediction } from "./domain.js";
 import { createOpenRouterRoutingProvider } from "./providers/openrouter.js";
 import {
   createOrResumeRun,
   createSeedFailureRun,
+  readRunEvents,
   readSuccessfulRunPredictions,
   rebuildRunHistory,
   writeSuccessfulRunOutput,
@@ -221,7 +224,38 @@ async function route(partition: "targets" | "samples"): Promise<void> {
 
   let outputPath: string | null = null;
   let evaluation: Awaited<ReturnType<typeof writeSampleRunEvaluation>> | null = null;
+  let progress: Awaited<ReturnType<typeof writeSampleRunProgress>> | null = null;
   const runDir = path.join(selectedRunsDir, runId);
+  if (partition === "samples") {
+    const latestCases = new Map<
+      string,
+      Extract<Awaited<ReturnType<typeof readRunEvents>>[number], {
+        type: "case_failed" | "case_succeeded";
+      }>
+    >();
+    for (const event of await readRunEvents(path.join(runDir, "events.jsonl"))) {
+      if (event.type === "case_failed" || event.type === "case_succeeded") {
+        latestCases.set(event.messageId, event);
+      }
+    }
+    progress = await writeSampleRunProgress({
+      samples: index.dataset.samples,
+      outcomes: [...latestCases.values()].map((event) =>
+        event.type === "case_succeeded"
+          ? {
+              status: "succeeded" as const,
+              prediction: decisionToPrediction(event.messageId, event.decision),
+            }
+          : {
+              status: "failed" as const,
+              messageId: event.messageId,
+              attempt: event.attempt,
+              error: event.error,
+            },
+      ),
+      runDir,
+    });
+  }
   if (summary.status === "succeeded") {
     if (partition === "targets") {
       outputPath = path.join(runDir, "output.csv");
@@ -259,6 +293,17 @@ async function route(partition: "targets" | "samples"): Promise<void> {
               actionCorrect: evaluation.actionCorrect,
               messageTypeCorrect: evaluation.messageTypeCorrect,
               exactCorrect: evaluation.exactCorrect,
+            }
+          : null,
+        progress: progress
+          ? {
+              attempted: progress.attempted,
+              technicalSucceeded: progress.technicalSucceeded,
+              technicalFailed: progress.technicalFailed,
+              actionCorrect: progress.evaluation.actionCorrect,
+              messageTypeCorrect: progress.evaluation.messageTypeCorrect,
+              exactCorrect: progress.evaluation.exactCorrect,
+              report: path.join(runDir, "sample-progress.md"),
             }
           : null,
         dashboard: path.join(selectedRunsDir, "index.html"),
