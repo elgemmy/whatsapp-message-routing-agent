@@ -43,8 +43,8 @@ const TYPES = [
   "unknown",
 ];
 
-test("routing-v5 prompt states the complete, injection-safe decision boundary", () => {
-  assert.equal(PROMPT_VERSION, "routing-v5");
+test("routing-v4-final prompt states the complete, injection-safe decision boundary", () => {
+  assert.equal(PROMPT_VERSION, "routing-v4-final");
   for (const action of ["notify", "digest", "mute"]) {
     assert.match(ROUTING_SYSTEM_PROMPT, new RegExp(`\\b${action}\\b`));
   }
@@ -52,13 +52,16 @@ test("routing-v5 prompt states the complete, injection-safe decision boundary", 
   assert.match(ROUTING_SYSTEM_PROMPT, /prompt-injection/i);
   assert.match(ROUTING_SYSTEM_PROMPT, /eligibleEvidenceMessageIds allowlist/);
   assert.match(ROUTING_SYSTEM_PROMPT, /not proof of spam or scam/i);
-  assert.match(ROUTING_SYSTEM_PROMPT, /Determine action independently/);
-  assert.match(ROUTING_SYSTEM_PROMPT, /active payment-system outage is urgent/i);
-  assert.match(ROUTING_SYSTEM_PROMPT, /legitimate unwanted offer remains promotion/i);
-  assert.match(ROUTING_SYSTEM_PROMPT, /Forwarded content retains an identifiable primary type/);
-  assert.match(ROUTING_SYSTEM_PROMPT, /unfamiliar sender alone does not produce unknown, spam, or scam/i);
-  assert.match(ROUTING_SYSTEM_PROMPT, /Uncertain between notify and digest: digest/);
-  assert.match(ROUTING_SYSTEM_PROMPT, /Uncertain between digest and mute: digest/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Determine action and message type independently/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /active emergency or safety issue: notify/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /unestablished and unverifiable sender relationship: unknown/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Peer-to-peer resale in a group is promotion/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /scheduled happening remains event/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /forwarded_count is not a type signal/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /sender-supplied link, QR, or account/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /uncertain between notify and digest, choose digest/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /uncertain between digest and mute, choose digest/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Do not mute merely because the sender is unfamiliar/i);
   assert.match(ROUTING_SYSTEM_PROMPT, /muted source may still notify/i);
   assert.match(ROUTING_SYSTEM_PROMPT, /Default to no evidence/);
   assert.match(ROUTING_SYSTEM_PROMPT, /Never claim a deadline, preference, relationship, repetition, link, credential request, or prior action unless it appears explicitly in the input/);
