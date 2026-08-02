@@ -13,6 +13,7 @@ import {
   RetryError,
   TypeValidationError,
 } from "ai";
+import { ZodError } from "zod";
 import type { RoutingContext } from "../data.js";
 import {
   buildRoutingMessages,
@@ -118,7 +119,8 @@ export function classifyOpenRouterError(error: unknown): ClassifiedOpenRouterErr
     NoObjectGeneratedError.isInstance(error) ||
     NoOutputGeneratedError.isInstance(error) ||
     NoContentGeneratedError.isInstance(error) ||
-    TypeValidationError.isInstance(error)
+    TypeValidationError.isInstance(error) ||
+    error instanceof ZodError
   ) {
     return { code: "invalid_output", message: "The model did not return a valid routing decision.", retryable: true };
   }

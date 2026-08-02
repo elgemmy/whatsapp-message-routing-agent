@@ -553,6 +553,21 @@ test("provider errors are reduced to stable retry policy without raw payloads", 
     classifyOpenRouterError(new NoContentGeneratedError({})).code,
     "invalid_output",
   );
+  const invalidLocalDecision = RoutingDecisionOutputSchema.safeParse({
+    action: "notify",
+    messageType: "urgent",
+    reason: "x".repeat(201),
+    confidence: 0.9,
+    evidenceMessageIds: [],
+  });
+  assert.equal(invalidLocalDecision.success, false);
+  if (!invalidLocalDecision.success) {
+    assert.deepEqual(classifyOpenRouterError(invalidLocalDecision.error), {
+      code: "invalid_output",
+      message: "The model did not return a valid routing decision.",
+      retryable: true,
+    });
+  }
   assert.equal(
     classifyOpenRouterError(new EmptyResponseBodyError({})).code,
     "network_error",
