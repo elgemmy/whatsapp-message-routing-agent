@@ -564,7 +564,7 @@ test("provider errors are reduced to stable retry policy without raw payloads", 
   if (!invalidLocalDecision.success) {
     assert.deepEqual(classifyOpenRouterError(invalidLocalDecision.error), {
       code: "invalid_output",
-      message: "The model did not return a valid routing decision.",
+      message: "The model decision failed local validation (reason:too_big).",
       retryable: true,
     });
   }

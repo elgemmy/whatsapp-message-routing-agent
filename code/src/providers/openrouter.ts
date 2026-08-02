@@ -119,10 +119,20 @@ export function classifyOpenRouterError(error: unknown): ClassifiedOpenRouterErr
     NoObjectGeneratedError.isInstance(error) ||
     NoOutputGeneratedError.isInstance(error) ||
     NoContentGeneratedError.isInstance(error) ||
-    TypeValidationError.isInstance(error) ||
-    error instanceof ZodError
+    TypeValidationError.isInstance(error)
   ) {
     return { code: "invalid_output", message: "The model did not return a valid routing decision.", retryable: true };
+  }
+  if (error instanceof ZodError) {
+    const issues = error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join(".") || "root"}:${issue.code}`)
+      .join(", ");
+    return {
+      code: "invalid_output",
+      message: `The model decision failed local validation (${issues}).`,
+      retryable: true,
+    };
   }
   if (InvalidPromptError.isInstance(error)) {
     return { code: "invalid_prompt", message: "The local routing prompt is invalid.", retryable: false, stopRun: true };
