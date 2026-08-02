@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Router Analysis — Luna baseline vs Opus 5</title>
+  <title>Router Analysis — Augmented Luna vs Opus 5</title>
   <style>
     :root {
       color-scheme: dark;
@@ -90,12 +90,13 @@
   <main class="shell">
     <header>
       <div class="eyebrow">Decision dashboard · 2 August 2026</div>
-      <h1>Where model strength helps—and where context policy still breaks.</h1>
-      <p class="lede">A measured comparison of the complete Luna High baseline against three corrected Opus 5 High runs, followed by the exact current context path from CSV rows to the structured OpenRouter request.</p>
-      <p class="meta">Illustrative 30-sample regression only. This is not organizer ground truth and does not establish hidden-target accuracy. Latest measured source snapshot: <code>4c1ffb1</code>.</p>
+      <h1>Augmented evidence confirms the policy bottleneck—and exposes output quality.</h1>
+      <p class="lede">One matched Luna High run and one Opus 5 High run over 30 provided samples plus 16 curated counterfactuals, now measuring evidence overlap, reason style, and confidence calibration alongside action and type.</p>
+      <p class="meta">Illustrative 46-case local regression only. Counterfactual labels may be revised; this is not organizer ground truth and does not establish hidden-target accuracy. Latest measured source snapshots: <code>45b52c8</code> / <code>b385960</code>.</p>
     </header>
 
     <nav class="nav" aria-label="Dashboard sections">
+      <a href="#augmented">Augmented run</a>
       <a href="#decision">Decision</a>
       <a href="#scorecard">Scorecard</a>
       <a href="#schema-test">Schema test</a>
@@ -105,6 +106,82 @@
       <a href="#weak-points">Weak points</a>
       <a href="#next">Next move</a>
     </nav>
+
+    <section id="augmented">
+      <div class="eyebrow">Latest matched experiment · routing-v3</div>
+      <h2>46 cases, five output dimensions</h2>
+      <p class="lede">Both models used High reasoning, an 8,000-token ceiling, Grok STT, the same 46-case dataset fingerprint, a 200-character reason limit, and at most 12 materially useful evidence IDs. Labels were evaluated only after inference.</p>
+
+      <div class="grid four">
+        <div class="panel kpi"><span>Technical completion</span><strong>46/46</strong><small>Both models · no final failures</small></div>
+        <div class="panel kpi"><span>Exact action + type</span><strong>32 → 35</strong><small>Luna 69.6% · Opus 76.1%</small></div>
+        <div class="panel kpi"><span>Evidence reference F1</span><strong>46.8% → 44.4%</strong><small>Opus recalls more, but pads more</small></div>
+        <div class="panel kpi"><span>Confidence Brier ↓</span><strong>.278 → .165</strong><small>Opus is materially better calibrated</small></div>
+      </div>
+
+      <div class="grid two" style="margin-top:16px">
+        <article class="panel">
+          <h3>Separate label slices and micro-total</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Set</th><th>Cases</th><th>Luna action / type / exact</th><th>Opus action / type / exact</th></tr></thead>
+            <tbody>
+              <tr><td>Provided examples</td><td>30</td><td>26 / 22 / 21</td><td>26 / 24 / 23</td></tr>
+              <tr><td>Curated counterfactuals</td><td>16</td><td>14 / 12 / 11</td><td>15 / 13 / 12</td></tr>
+              <tr><td><strong>Augmented total</strong></td><td><strong>46</strong></td><td><strong>40 / 34 / 32</strong></td><td><strong>41 / 37 / 35</strong></td></tr>
+            </tbody>
+          </table></div>
+          <p class="meta">The total is a micro-aggregate over all 46 cases, never an average of the two slice percentages.</p>
+        </article>
+        <article class="panel">
+          <h3>Case-level direction</h3>
+          <div class="grid two">
+            <div class="kpi"><span>Both exact</span><strong>27</strong><small>Shared correct</small></div>
+            <div class="kpi"><span>Opus only</span><strong>8</strong><small>Model-strength fixes</small></div>
+            <div class="kpi"><span>Luna only</span><strong>5</strong><small>Opus regressions</small></div>
+            <div class="kpi"><span>Neither exact</span><strong>6</strong><small>Policy/taxonomy pressure</small></div>
+          </div>
+          <p class="meta">Net +3 exact for Opus hides eight fixes and five regressions. The six shared misses are <code>sample_msg_002</code>, <code>011</code>, <code>043</code>, <code>049</code>, <code>cf_msg_003</code>, and <code>cf_msg_008</code>.</p>
+        </article>
+      </div>
+
+      <article class="panel" style="margin-top:16px">
+        <h3>Output-quality scorecard</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Metric</th><th>Luna High</th><th>Opus 5 High</th><th>Read</th></tr></thead>
+          <tbody>
+            <tr><td>Evidence exact reference set</td><td>14/46 · 30.4%</td><td>8/46 · 17.4%</td><td>Luna matches the curated set more often.</td></tr>
+            <tr><td>Evidence precision / recall / F1</td><td>33.3% / 78.3% / 46.8%</td><td>29.4% / 91.3% / 44.4%</td><td>Opus finds nearly every reference but selects 151 IDs overall versus Luna's 116.</td></tr>
+            <tr><td>Reason bound and sentence style</td><td>46/46 · mean 151 chars · max 183</td><td>46/46 · mean 163 chars · max 198</td><td>The 200-character contract works; style does not prove semantic usefulness.</td></tr>
+            <tr><td>Confidence Brier / 5-bin ECE ↓</td><td>0.278 / 0.274</td><td>0.165 / 0.086</td><td>Luna placed every case above 0.8 confidence despite 14 exact misses.</td></tr>
+          </tbody>
+        </table></div>
+      </article>
+
+      <div class="grid two" style="margin-top:16px">
+        <article class="panel callout">
+          <div class="eyebrow">Counterfactual sensitivity</div>
+          <h3>Opus changes all 8 pairs; Luna changes 7</h3>
+          <p>Both models classify both members exactly in 4/8 pairs. Luna fails to change the known-versus-unfamiliar volunteer pair, returning <code>notify/event</code> twice. Opus changes that pair, but calls the unfamiliar case <code>digest/personal</code> instead of <code>digest/unknown</code>.</p>
+        </article>
+        <article class="panel callout warning">
+          <div class="eyebrow">Reason-quality warning</div>
+          <h3>Passing style is not grounded reasoning</h3>
+          <p>Opus's exact <code>cf_msg_001</code> decision says the link domain differs from the official one, although the target contains no link. The report therefore shows expected and predicted reasons side by side instead of assigning a misleading semantic score.</p>
+        </article>
+      </div>
+
+      <article class="panel" style="margin-top:16px">
+        <h3>Run ledger</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Run</th><th>Model</th><th>Action / type / exact</th><th>Input / output tokens</th><th>Reported cost</th><th>Artifacts</th></tr></thead>
+          <tbody>
+            <tr><td><code>luna-…-augmented-1</code></td><td>Luna High</td><td>40 / 34 / 32</td><td>109,051 / 13,492</td><td>$0.023054</td><td><a href="../code/eval-runs/live/luna-high8000-grok-stt-augmented-1/sample-report.md">full report</a></td></tr>
+            <tr><td><code>opus5-…-augmented-1</code></td><td>Opus 5 High</td><td>41 / 37 / 35</td><td>182,643 / 8,186</td><td>$1.119196</td><td><a href="../code/eval-runs/live/opus5-high8000-grok-stt-augmented-1/sample-report.md">full report</a></td></tr>
+          </tbody>
+        </table></div>
+        <p class="meta">Opus cost 48.5× Luna for three additional exact pairs. Luna records one initial sandbox-network failure with no reported usage, then 46 valid decisions; Opus completed all 46 routing calls on their first attempt. Each run made three successful Grok STT calls. Manifests are marked dirty only because the user's in-progress policy drafts were intentionally left untracked; the committed routing/evaluator source and dataset fingerprint are pinned.</p>
+      </article>
+    </section>
 
     <section id="decision">
       <div class="grid two">
@@ -374,7 +451,7 @@ Content-Type: application/json
       </details>
       <details>
         <summary>Routing policy carried in the system prompt</summary>
-        <p>Defines <code>notify</code>, <code>digest</code>, and <code>mute</code>; enumerates all 11 types including <code>payment</code> and <code>unknown</code>; distinguishes legitimate payments from credential pressure; treats all case content as untrusted; makes media mismatch cautionary rather than dispositive; restricts evidence to the allowlist; and requests one concise reason with confidence over the complete action/type pair.</p>
+        <p>Defines <code>notify</code>, <code>digest</code>, and <code>mute</code>; enumerates all 11 types including <code>payment</code> and <code>unknown</code>; distinguishes legitimate payments from credential pressure; treats all case content as untrusted; makes media mismatch cautionary rather than dispositive; restricts evidence to at most 12 materially useful allowlisted IDs without padding; and requires one complete reason of at most 200 characters with confidence over the complete action/type pair.</p>
       </details>
       <p class="meta">Code evidence: <a href="../code/src/data.ts">data.ts</a>, <a href="../code/src/routing.ts">routing.ts</a>, <a href="../code/src/providers/openrouter.ts">OpenRouter router</a>, <a href="../code/src/providers/openrouter-transcription.ts">STT provider</a>, and <a href="../code/src/run-history.ts">run journal</a>.</p>
     </section>
@@ -387,7 +464,7 @@ Content-Type: application/json
         <div class="rank"><span class="rank-number">2</span><div><h3>Action policy is not concrete enough</h3><p>Opus fixes opted-in promotion and benign greeting prioritization, yet regresses Amazon status, service feedback, and loan solicitation typing. The prompt gives principles but not a compact precedence matrix for urgency, user relationship, opt-in/out, repetition, and risk.</p></div></div>
         <div class="rank"><span class="rank-number">3</span><div><h3>Context retrieval is opaque, though not yet convicted</h3><p>The affinity heuristic is hand-tuned and 19/30 samples are capped, but expected evidence coverage is strong and all interesting-case references survive. The larger issue is that artifacts do not preserve the exact bounded case, making retrieval errors harder to inspect and compare later.</p></div></div>
         <div class="rank"><span class="rank-number">4</span><div><h3>Raw history lacks derived behavioral signals</h3><p>The model repeatedly re-derives recency, repetition, engagement, and conversation-specific preference from up to 12 rows. Small deterministic summaries may be cheaper and clearer than expanding the raw context window.</p></div></div>
-        <div class="rank"><span class="rank-number">5</span><div><h3>Confidence and evidence quality are not part of this scorecard</h3><p>Stable action/type pairs hide variation in reasons, confidence, and evidence selection. Until confidence is calibrated, it is not a safe criterion for selectively escalating to Opus.</p></div></div>
+        <div class="rank"><span class="rank-number">5</span><div><h3>Evidence selection and confidence need explicit policy</h3><p>The augmented scorecard now exposes both: Opus recalls more reference evidence but pads its lists, while Luna is severely overconfident. Neither model's confidence is ready to gate selective escalation without calibration.</p></div></div>
       </article>
     </section>
 
@@ -410,7 +487,7 @@ Content-Type: application/json
       <h2>What this dashboard does not prove</h2>
       <div class="panel">
         <ul>
-          <li>The 30 supplied labels are illustrative, not hidden organizer ground truth.</li>
+          <li>The 30 supplied labels and 16 curated counterfactuals are illustrative, not hidden organizer ground truth. The curated cases may contain mistakes and should be revised as policy becomes explicit.</li>
           <li>Luna ran at Git <code>0cfc5cd</code>; Opus required the later cross-provider structural-schema fix at <code>2a8521d</code>. Full local Zod and evidence validation stayed strict, but this is not a perfectly single-variable ablation.</li>
           <li>Opus’s <code>baselineRunId</code> chain points to adjacent Opus/pre-fix runs, so this dashboard explicitly chooses Luna High as the analytical baseline.</li>
           <li>Provider-reported tokenization and prices can differ by model/provider and may change. Costs here belong to these immutable artifacts.</li>
@@ -419,7 +496,7 @@ Content-Type: application/json
     </section>
 
     <footer>
-      Source of truth: immutable manifests, journals, summaries, and <code>sample-metrics.json</code> under <code>code/eval-runs/live/</code>. See the durable <a href="decision-log.md">decision log</a>. No provider calls were made to create this dashboard.
+      Source of truth: immutable manifests, journals, summaries, and <code>sample-metrics.json</code> under <code>code/eval-runs/live/</code>. See the durable <a href="decision-log.md">decision log</a>. Provider calls produced those run artifacts; this HTML is a static projection of them.
     </footer>
   </main>
   <script>
