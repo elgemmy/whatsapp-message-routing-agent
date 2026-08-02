@@ -147,3 +147,16 @@ Status: measured; use this order for the next accuracy pass
 - The current 12-message retrieval cap affects 19/30 samples. It retains 29/31 evidence references supplied by the illustrative labels; the two omitted references belong to cases both model families classify exactly. Every supplied evidence reference for the 12 Luna/Opus error-delta cases is present in the shortlist.
 - Do not expand raw history or add an oracle first. The stronger immediate hypothesis is underspecified action precedence and type boundaries, especially event/urgent, personal/event, greeting/forward, spam/scam, and unknown/personal.
 - First add inspectable context snapshots or hashes so retrieval changes can be compared. Then test a compact action/type decision matrix with Luna under a new prompt version, protecting currently correct cases. Add deterministic relationship/repetition/engagement summaries only if that measured prompt pass leaves context-dependent misses.
+
+## 2026-08-02 — Luna structural-schema stability experiment
+
+Status: measured; structural schema accepted, semantic variance remains
+
+- Ran three fresh clean Luna High sample replications at commit `4c1ffb1`, with `routing-v2`, 8,000 output tokens, Grok STT, and the same dataset fingerprint as the old Luna baseline. All 90 routing calls and nine transcriptions succeeded on the first attempt with stop finishes; the structural provider schema caused no technical regression.
+- Results were 26/23/22, 27/22/20, and 26/25/22 for action/type/exact. Means were 26.33/23.33/21.33 versus the old single run's 26/23/21, and every old score lies within the new range. There is no measured aggregate schema-driven accuracy shift.
+- Luna pairwise action/type disagreement was 7, 4, and 4 of 30 cases; only 23/30 pairs were unanimous across the three new runs. Opus had zero pair disagreement across its three structural-schema runs, so the schema does not explain Opus's unusual semantic stability.
+- Variability is concentrated in `007`, `009`, `011`, `012`, `013`, `044`, and `049`. There are no stable exact fixes over the old Luna run. `011` is the only stable action regression: old `digest/business_update` became `mute` in all three runs, with type still variable.
+- All three voice transcripts exactly match the old baseline and voice remains 3/3 exact in every run, isolating the observed variance to the router. Text exact ranged 13–15/22 and image 4–5/5.
+- Full decisions are not deterministic for either family: every pairwise complete decision differs. Luna changes action in 6/90 pair comparisons, type in 10/90, evidence order in 39/90, and evidence set in 24/90; Opus changes 0/90 action/type pairs, 19/90 evidence orders, and 14/90 evidence sets.
+- Reported new-run cost was $0.015142, $0.007537, and $0.007330 despite identical input tokens and the same routed provider. Preserve these artifact values without inferring a new permanent price; caching or provider accounting may explain the spread.
+- This is an operational before/after comparison, not causal proof: the pre-schema condition has only one older run. A matched old-schema replication would require an isolated historical worktree and fresh contemporaneous spend.

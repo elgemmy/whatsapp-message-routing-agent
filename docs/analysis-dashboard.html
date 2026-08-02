@@ -92,12 +92,13 @@
       <div class="eyebrow">Decision dashboard · 2 August 2026</div>
       <h1>Where model strength helps—and where context policy still breaks.</h1>
       <p class="lede">A measured comparison of the complete Luna High baseline against three corrected Opus 5 High runs, followed by the exact current context path from CSV rows to the structured OpenRouter request.</p>
-      <p class="meta">Illustrative 30-sample regression only. This is not organizer ground truth and does not establish hidden-target accuracy. Context implementation snapshot: <code>d29feff</code>.</p>
+      <p class="meta">Illustrative 30-sample regression only. This is not organizer ground truth and does not establish hidden-target accuracy. Latest measured source snapshot: <code>4c1ffb1</code>.</p>
     </header>
 
     <nav class="nav" aria-label="Dashboard sections">
       <a href="#decision">Decision</a>
       <a href="#scorecard">Scorecard</a>
+      <a href="#schema-test">Schema test</a>
       <a href="#deltas">Case deltas</a>
       <a href="#flow">Context flow</a>
       <a href="#request">Final request</a>
@@ -166,6 +167,89 @@
         </table></div>
         <p class="meta">Opus mean: $0.731918 per run; $2.195753 total. All three Opus runs produced identical action/type pairs, but reasons, confidence, and evidence fields varied—full prediction-record stability is not zero variance.</p>
       </article>
+    </section>
+
+    <section id="schema-test">
+      <div class="eyebrow">New three-run experiment</div>
+      <h2>Structural schema: reliable transport, variable Luna semantics</h2>
+      <p class="lede">Three fresh Luna High replications used the same 30 samples, prompt, context, reasoning effort, output ceiling, and Grok STT as the old baseline, but the current structural provider-facing schema with full local validation. All three ran from clean commit <code>4c1ffb1</code>.</p>
+
+      <div class="grid four">
+        <div class="panel kpi"><span>Technical routing</span><strong>90/90</strong><small>First attempt · stop finish</small></div>
+        <div class="panel kpi"><span>Exact scores</span><strong>22 · 20 · 22</strong><small>Mean 21.33 vs old 21</small></div>
+        <div class="panel kpi"><span>Unanimous pairs</span><strong>23/30</strong><small>7 boundary cases varied</small></div>
+        <div class="panel kpi"><span>Voice control</span><strong>9/9</strong><small>Exact transcript text across runs</small></div>
+      </div>
+
+      <div class="grid two" style="margin-top:16px">
+        <article class="panel callout">
+          <div class="eyebrow">Schema conclusion</div>
+          <h3>No material aggregate score shift</h3>
+          <p>The new means are 26.33 action, 23.33 type, and 21.33 exact versus the old single run's 26/23/21. Each old score lies inside the new range. Input tokens are exactly 71,936 in all four runs, and no new run produced invalid output or truncation.</p>
+        </article>
+        <article class="panel callout warning">
+          <div class="eyebrow">Stability conclusion</div>
+          <h3>Luna is not Opus-stable</h3>
+          <p>The three Luna runs disagree on 7, 4, and 4 action/type pairs pairwise—15/90 pair comparisons, or 16.7%. Opus disagreed on 0/90 under the same structural schema. The schema solved provider compatibility; it did not make Luna deterministic.</p>
+        </article>
+      </div>
+
+      <article class="panel" style="margin-top:16px">
+        <h3>Replication ledger</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Run</th><th>Action / type / exact</th><th>Text</th><th>Image</th><th>Voice</th><th>Output tokens</th><th>Reported cost</th><th>Artifacts</th></tr></thead>
+          <tbody>
+            <tr><td><code>structural-1</code></td><td>26 / 23 / 22</td><td>15/22</td><td>4/5</td><td>3/3</td><td>8,035</td><td>$0.015142</td><td><a href="../code/eval-runs/live/luna-high8000-grok-stt-structural-1/sample-report.md">report</a></td></tr>
+            <tr><td><code>structural-2</code></td><td>27 / 22 / 20</td><td>13/22</td><td>4/5</td><td>3/3</td><td>9,048</td><td>$0.007537</td><td><a href="../code/eval-runs/live/luna-high8000-grok-stt-structural-2/sample-report.md">report</a></td></tr>
+            <tr><td><code>structural-3</code></td><td>26 / 25 / 22</td><td>14/22</td><td>5/5</td><td>3/3</td><td>8,702</td><td>$0.007330</td><td><a href="../code/eval-runs/live/luna-high8000-grok-stt-structural-3/sample-report.md">report</a></td></tr>
+            <tr><td>Old Luna baseline</td><td>26 / 23 / 21</td><td>14/22</td><td>4/5</td><td>3/3</td><td>8,867</td><td>$0.015641</td><td><a href="../code/eval-runs/live/luna-high8000-grok-stt-full-1/sample-report.md">report</a></td></tr>
+          </tbody>
+        </table></div>
+        <p class="meta">All runs have 71,936 reported input tokens. The large cost spread despite the same OpenAI route and input size is likely sensitive to provider caching or transient accounting; it is retained as artifact evidence, not treated as a permanent price change.</p>
+      </article>
+
+      <div class="grid two" style="margin-top:16px">
+        <article class="panel">
+          <h3>Seven variable action/type boundaries</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Case</th><th>Run 1</th><th>Run 2</th><th>Run 3</th></tr></thead>
+            <tbody>
+              <tr><td><code>007</code></td><td>mute / promotion</td><td>digest / promotion</td><td>mute / promotion</td></tr>
+              <tr><td><code>009</code></td><td>digest / greeting</td><td>mute / greeting</td><td>mute / greeting</td></tr>
+              <tr><td><code>011</code></td><td>mute / promotion</td><td>mute / business_update</td><td>mute / business_update</td></tr>
+              <tr><td><code>012</code></td><td>digest / promotion</td><td>digest / personal</td><td>digest / promotion</td></tr>
+              <tr><td><code>013</code></td><td>mute / greeting</td><td>mute / forward</td><td>mute / greeting</td></tr>
+              <tr><td><code>044</code></td><td>notify / personal</td><td>digest / personal</td><td>digest / promotion</td></tr>
+              <tr><td><code>049</code></td><td>notify / personal</td><td>notify / event</td><td>notify / event</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+        <article class="panel">
+          <h3>Field-level pairwise variance</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Field</th><th>Luna changes</th><th>Opus changes</th></tr></thead>
+            <tbody>
+              <tr><td>Action</td><td>6/90</td><td>0/90</td></tr>
+              <tr><td>Message type</td><td>10/90</td><td>0/90</td></tr>
+              <tr><td>Reason text</td><td>90/90</td><td>89/90</td></tr>
+              <tr><td>Confidence</td><td>35/90</td><td>44/90</td></tr>
+              <tr><td>Evidence order</td><td>39/90</td><td>19/90</td></tr>
+              <tr><td>Evidence set</td><td>24/90</td><td>14/90</td></tr>
+              <tr><td>Complete decision</td><td>90/90</td><td>90/90</td></tr>
+            </tbody>
+          </table></div>
+          <p class="meta">Opus is stable on the scored pair, not on every generated field. Luna is additionally more variable in evidence selection; Opus varies confidence more often in pairwise lexical comparison.</p>
+        </article>
+      </div>
+
+      <details>
+        <summary>Directional changes from the old Luna baseline</summary>
+        <p>There are no stable exact fixes across all three new runs. <code>007</code>, <code>009</code>, <code>013</code>, and <code>044</code> are fixed only in some runs. <code>011</code> is the one stable action regression: the old run returned <code>digest/business_update</code>, while all three new runs return <code>mute</code> with a variable type. <code>012</code> regresses only once. Twenty-three cases preserve one unanimous action/type pair across the old and all new Luna runs.</p>
+      </details>
+      <details>
+        <summary>Causal limitation</summary>
+        <p>The old baseline is one pre-schema run at <code>0cfc5cd</code>; the new set is three later runs at <code>4c1ffb1</code>. Provider/model behavior can drift over time, so this is an operational before/after comparison—not a matched factorial proof that the schema caused any individual change. A strict causal test would also replicate the old schema in an isolated historical worktree at the same time.</p>
+      </details>
     </section>
 
     <section id="deltas">
