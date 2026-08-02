@@ -48,6 +48,8 @@ npm run runs:rebuild
 
 Open `runs/index.html` in a browser for the generated dashboard. `runs/history.md` and each run's `report.md` provide human-readable alternatives.
 
+For the current Luna-versus-Opus comparison, complete context-flow audit, request boundary, and prioritized next experiments, open [`../docs/analysis-dashboard.html`](../docs/analysis-dashboard.html). This is a committed evidence snapshot; generated run history remains under `eval-runs/live/index.html`.
+
 `npm run eval:sample-seed` creates `eval-runs/seed-all-wrong` with deliberately incorrect, contract-shaped predictions for the 30 solved examples. Its expected 0/30 action, type, and exact scores prove the evaluator reports failures. It is a harness self-check, never a routing baseline. Open `eval-runs/index.html` for its case-level dashboard.
 
 `npm run verify:harness` is the single clean-check command. `npm run validate:output` validates `dataset/output.csv` against the exact headers, target coverage/order, allowed values, and historical-evidence boundary. It intentionally fails while the starter template is blank.

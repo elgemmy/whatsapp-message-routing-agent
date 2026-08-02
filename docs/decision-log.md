@@ -137,3 +137,13 @@ Status: accepted
 - Default reasoning effort to `high`, matching the three stable Opus runs and the complete Luna baseline. A Luna Max experiment remains explicit and receives a fresh run ID because manifests reject configuration drift.
 - Keep `.env.example` credential-safe: the API key field is empty and optional model overrides are commented. Never modify or commit a user's real `.env`.
 - Do not add an oracle or model council now. Opus remains the evaluator-safe default and informative upper-bound model; Luna remains the inexpensive development override while context construction is iterated.
+
+## 2026-08-02 — Luna/Opus context-flow diagnosis
+
+Status: measured; use this order for the next accuracy pass
+
+- Consolidated the Luna High baseline, three corrected Opus 5 High runs, current context pipeline, final AI SDK request boundary, and prioritized weak points in `docs/analysis-dashboard.html`.
+- Opus's stable gain remains bounded: 23/30 exact versus Luna's 21/30, with five fixes, three regressions, unchanged action accuracy, and about 46.8 times the reported cost. No calibrated or narrow failure signal exists yet for a selective oracle gate.
+- The current 12-message retrieval cap affects 19/30 samples. It retains 29/31 evidence references supplied by the illustrative labels; the two omitted references belong to cases both model families classify exactly. Every supplied evidence reference for the 12 Luna/Opus error-delta cases is present in the shortlist.
+- Do not expand raw history or add an oracle first. The stronger immediate hypothesis is underspecified action precedence and type boundaries, especially event/urgent, personal/event, greeting/forward, spam/scam, and unknown/personal.
+- First add inspectable context snapshots or hashes so retrieval changes can be compared. Then test a compact action/type decision matrix with Luna under a new prompt version, protecting currently correct cases. Add deterministic relationship/repetition/engagement summaries only if that measured prompt pass leaves context-dependent misses.

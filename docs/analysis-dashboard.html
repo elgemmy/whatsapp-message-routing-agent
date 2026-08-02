@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Router Analysis — Luna baseline vs Opus 5</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090c12;
+      --panel: #111722;
+      --panel-2: #151e2c;
+      --line: #263246;
+      --text: #eef3fb;
+      --muted: #9eacc1;
+      --blue: #79a8ff;
+      --cyan: #58d7d0;
+      --green: #6fdaa3;
+      --amber: #f5c36b;
+      --red: #ff8c91;
+      --purple: #c49cff;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: radial-gradient(circle at 80% -10%, #182943 0, transparent 32rem), var(--bg); color: var(--text); }
+    a { color: var(--blue); }
+    code { font-family: "SFMono-Regular", Consolas, monospace; font-size: .9em; overflow-wrap: anywhere; }
+    .shell { width: min(1380px, calc(100% - 40px)); margin: 0 auto; padding: 48px 0 80px; }
+    .eyebrow { color: var(--cyan); font-size: .76rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { max-width: 900px; margin: 10px 0 12px; font-size: clamp(2.2rem, 5vw, 4.6rem); line-height: .98; letter-spacing: -.055em; }
+    h2 { margin: 0 0 8px; font-size: clamp(1.55rem, 2.8vw, 2.35rem); letter-spacing: -.035em; }
+    h3 { margin: 0 0 8px; font-size: 1.08rem; }
+    p { line-height: 1.65; }
+    .lede { max-width: 900px; color: var(--muted); font-size: 1.08rem; }
+    .meta { color: var(--muted); font-size: .85rem; }
+    .nav { position: sticky; top: 0; z-index: 10; display: flex; gap: 8px; margin: 28px 0 38px; padding: 10px; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px); }
+    .nav a { flex: none; padding: 8px 12px; border-radius: 9px; color: var(--muted); text-decoration: none; font-size: .85rem; }
+    .nav a:hover { background: var(--panel-2); color: var(--text); }
+    section { margin-top: 56px; scroll-margin-top: 86px; }
+    .panel { border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(145deg, rgba(21,30,44,.94), rgba(14,19,29,.96)); padding: 24px; box-shadow: 0 22px 70px rgba(0,0,0,.16); }
+    .grid { display: grid; gap: 16px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .kpi strong { display: block; margin: 6px 0 2px; font-size: 2rem; letter-spacing: -.04em; }
+    .kpi span { color: var(--muted); font-size: .83rem; }
+    .kpi small { display: block; margin-top: 9px; color: var(--cyan); }
+    .callout { border-left: 3px solid var(--cyan); }
+    .callout.warning { border-left-color: var(--amber); }
+    .callout strong { color: var(--text); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: .9rem; }
+    th, td { padding: 11px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; }
+    tbody tr:hover { background: rgba(121,168,255,.045); }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; font-size: .74rem; font-weight: 800; white-space: nowrap; }
+    .pill.fixed { color: #b5f5d1; background: #173c2d; }
+    .pill.regressed { color: #ffc0c3; background: #48242b; }
+    .pill.shared { color: #ffdfa4; background: #42321b; }
+    .pill.stable { color: #c9b1ff; background: #33244f; }
+    .bars { display: grid; gap: 18px; margin-top: 18px; }
+    .bar-row { display: grid; grid-template-columns: 80px 1fr 90px; align-items: center; gap: 12px; }
+    .bar-track { height: 11px; border-radius: 99px; overflow: hidden; background: #253045; }
+    .bar-fill { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--blue), var(--cyan)); }
+    .bar-fill.opus { background: linear-gradient(90deg, var(--purple), var(--cyan)); }
+    .flow { display: grid; grid-template-columns: repeat(7, minmax(155px, 1fr)); gap: 12px; overflow-x: auto; padding: 8px 2px 16px; }
+    .flow article { position: relative; min-height: 190px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel-2); }
+    .flow article:not(:last-child)::after { content: "→"; position: absolute; right: -12px; top: 82px; z-index: 2; color: var(--cyan); font-weight: 900; }
+    .flow b { display: block; margin-bottom: 8px; color: var(--cyan); font-size: .74rem; letter-spacing: .08em; text-transform: uppercase; }
+    .flow p { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.5; }
+    .codebox { margin-top: 16px; padding: 18px; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #080b11; color: #cfe0f7; white-space: pre; line-height: 1.55; font: .8rem/1.55 "SFMono-Regular", Consolas, monospace; }
+    details { margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: rgba(8,11,17,.38); }
+    summary { cursor: pointer; font-weight: 750; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    button { border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; background: var(--panel-2); color: var(--muted); cursor: pointer; }
+    button.active, button:hover { color: var(--text); border-color: var(--blue); }
+    .rank { display: grid; grid-template-columns: 42px 1fr; gap: 14px; align-items: start; }
+    .rank + .rank { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+    .rank-number { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: #22334f; color: var(--blue); font-weight: 900; }
+    .rank p { margin: 4px 0 0; color: var(--muted); }
+    .good { color: var(--green); }
+    .bad { color: var(--red); }
+    footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--line); color: var(--muted); }
+    @media (max-width: 1000px) { .grid.four { grid-template-columns: repeat(2, 1fr); } .grid.three { grid-template-columns: 1fr; } }
+    @media (max-width: 720px) { .shell { width: min(100% - 24px, 1380px); padding-top: 28px; } .grid.two, .grid.four { grid-template-columns: 1fr; } .panel { padding: 18px; } .bar-row { grid-template-columns: 62px 1fr 68px; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="eyebrow">Decision dashboard · 2 August 2026</div>
+      <h1>Where model strength helps—and where context policy still breaks.</h1>
+      <p class="lede">A measured comparison of the complete Luna High baseline against three corrected Opus 5 High runs, followed by the exact current context path from CSV rows to the structured OpenRouter request.</p>
+      <p class="meta">Illustrative 30-sample regression only. This is not organizer ground truth and does not establish hidden-target accuracy. Context implementation snapshot: <code>d29feff</code>.</p>
+    </header>
+
+    <nav class="nav" aria-label="Dashboard sections">
+      <a href="#decision">Decision</a>
+      <a href="#scorecard">Scorecard</a>
+      <a href="#deltas">Case deltas</a>
+      <a href="#flow">Context flow</a>
+      <a href="#request">Final request</a>
+      <a href="#weak-points">Weak points</a>
+      <a href="#next">Next move</a>
+    </nav>
+
+    <section id="decision">
+      <div class="grid two">
+        <article class="panel callout">
+          <div class="eyebrow">Current read</div>
+          <h2>Do not add an oracle yet.</h2>
+          <p>Opus is extremely stable and gains two exact cases, but it also introduces three stable regressions and costs about <strong>46.8×</strong> the Luna baseline. We do not yet have a calibrated uncertainty signal or narrow failure cluster that can gate oracle calls reliably.</p>
+        </article>
+        <article class="panel callout warning">
+          <div class="eyebrow">Strongest diagnosis</div>
+          <h2>Retrieval volume is not the first fix.</h2>
+          <p>Every supplied evidence ID for the 12 interesting Luna/Opus error-delta cases is already inside the model’s shortlist. Across all samples, 29/31 supplied references survive the 12-message cap; the two omissions are cases both models classify exactly. The immediate bottleneck looks more like <strong>action policy and type taxonomy</strong> than missing raw context.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="scorecard">
+      <div class="eyebrow">Measured comparison</div>
+      <h2>Luna baseline vs Opus 5</h2>
+      <p class="lede">Same 30 samples, prompt <code>routing-v2</code>, High reasoning, 8,000 output-token ceiling, Grok STT, and dataset fingerprint. Opus used the later cross-provider structural schema fix; see caveats below.</p>
+      <div class="grid four">
+        <div class="panel kpi"><span>Technical completion</span><strong>30/30</strong><small>Both model families</small></div>
+        <div class="panel kpi"><span>Exact pair</span><strong>21 → 23</strong><small>+2 with Opus</small></div>
+        <div class="panel kpi"><span>Action</span><strong>26 → 26</strong><small>No aggregate gain</small></div>
+        <div class="panel kpi"><span>Mean run cost</span><strong>$0.016 → $0.732</strong><small>46.8× higher</small></div>
+      </div>
+
+      <div class="grid two" style="margin-top:16px">
+        <article class="panel">
+          <h3>Accuracy</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Model</th><th>Runs</th><th>Action</th><th>Type</th><th>Exact</th><th>Pair stability</th></tr></thead>
+            <tbody>
+              <tr><td>Luna High</td><td>1</td><td>26/30 · 86.7%</td><td>23/30 · 76.7%</td><td>21/30 · 70.0%</td><td>Not measured across repeats</td></tr>
+              <tr><td>Opus 5 High</td><td>3</td><td>26/30 · 86.7%</td><td>24/30 · 80.0%</td><td>23/30 · 76.7%</td><td><span class="pill stable">0/30 pair disagreement</span></td></tr>
+            </tbody>
+          </table></div>
+        </article>
+        <article class="panel">
+          <h3>Exact accuracy by modality</h3>
+          <div class="bars">
+            <div class="bar-row"><span>Text</span><div><div class="bar-track"><div class="bar-fill" style="width:63.6%"></div></div><div class="bar-track" style="margin-top:5px"><div class="bar-fill opus" style="width:72.7%"></div></div></div><strong>14 → 16</strong></div>
+            <div class="bar-row"><span>Image</span><div><div class="bar-track"><div class="bar-fill" style="width:80%"></div></div><div class="bar-track" style="margin-top:5px"><div class="bar-fill opus" style="width:100%"></div></div></div><strong>4 → 5</strong></div>
+            <div class="bar-row"><span>Voice</span><div><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><div class="bar-track" style="margin-top:5px"><div class="bar-fill opus" style="width:66.7%"></div></div></div><strong>3 → 2</strong></div>
+          </div>
+          <p class="meta">Top bar: Luna. Bottom bar: Opus. Totals are 22 text, 5 image, 3 voice.</p>
+        </article>
+      </div>
+
+      <article class="panel" style="margin-top:16px">
+        <h3>Run ledger</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Run</th><th>Model</th><th>Action / type / exact</th><th>Input / output</th><th>Reported cost</th><th>Artifacts</th></tr></thead>
+          <tbody>
+            <tr><td><code>luna-high8000-grok-stt-full-1</code></td><td>Luna High</td><td>26 / 23 / 21</td><td>71,936 / 8,867</td><td>$0.015641</td><td><a href="../code/eval-runs/live/luna-high8000-grok-stt-full-1/sample-report.md">sample report</a></td></tr>
+            <tr><td><code>opus5-…-1-fixed</code></td><td>Opus 5 High</td><td>26 / 24 / 23</td><td>119,947 / 5,336</td><td>$0.734466</td><td><a href="../code/eval-runs/live/opus5-high8000-grok-stt-full-1-fixed/sample-report.md">sample report</a></td></tr>
+            <tr><td><code>opus5-…-2-fixed</code></td><td>Opus 5 High</td><td>26 / 24 / 23</td><td>119,948 / 5,353</td><td>$0.734896</td><td><a href="../code/eval-runs/live/opus5-high8000-grok-stt-full-2-fixed/sample-report.md">sample report</a></td></tr>
+            <tr><td><code>opus5-…-3-fixed</code></td><td>Opus 5 High</td><td>26 / 24 / 23</td><td>119,947 / 5,013</td><td>$0.726391</td><td><a href="../code/eval-runs/live/opus5-high8000-grok-stt-full-3-fixed/sample-report.md">sample report</a></td></tr>
+          </tbody>
+        </table></div>
+        <p class="meta">Opus mean: $0.731918 per run; $2.195753 total. All three Opus runs produced identical action/type pairs, but reasons, confidence, and evidence fields varied—full prediction-record stability is not zero variance.</p>
+      </article>
+    </section>
+
+    <section id="deltas">
+      <div class="eyebrow">Case-level evidence</div>
+      <h2>What Opus actually changed</h2>
+      <p class="lede">Five fixes, three regressions, and four misses shared with Luna. Every Opus outcome below repeated identically in all three runs.</p>
+      <div class="filters" aria-label="Filter case changes">
+        <button class="active" data-filter="all">All 12</button>
+        <button data-filter="fixed">5 fixes</button>
+        <button data-filter="regressed">3 regressions</button>
+        <button data-filter="shared">4 shared misses</button>
+      </div>
+      <div class="panel table-wrap" style="margin-top:12px">
+        <table id="delta-table">
+          <thead><tr><th>Case</th><th>Expected</th><th>Luna</th><th>Opus</th><th>Change</th><th>Boundary exposed</th></tr></thead>
+          <tbody>
+            <tr data-kind="shared"><td><code>002</code> · school bus early</td><td>notify / event</td><td>notify / urgent</td><td>notify / urgent</td><td><span class="pill shared">shared miss</span></td><td>Event topic versus urgency semantics</td></tr>
+            <tr data-kind="regressed"><td><code>004</code> · Amazon order packed</td><td>notify / business_update</td><td>notify / business_update</td><td>digest / business_update</td><td><span class="pill regressed">regressed</span></td><td>Business update interrupt threshold</td></tr>
+            <tr data-kind="shared"><td><code>005</code> · health update ready</td><td>notify / event</td><td>notify / business_update</td><td>digest / business_update</td><td><span class="pill shared">shared miss</span></td><td>Vague scheduled health event</td></tr>
+            <tr data-kind="fixed"><td><code>006</code> · direct @ pickup question</td><td>notify / personal</td><td>notify / event</td><td>notify / personal</td><td><span class="pill fixed">fixed</span></td><td>Personal request versus event logistics</td></tr>
+            <tr data-kind="fixed"><td><code>007</code> · opted-in travel offer</td><td>digest / promotion</td><td>mute / promotion</td><td>digest / promotion</td><td><span class="pill fixed">fixed</span></td><td>Allowed promotion versus unwanted noise</td></tr>
+            <tr data-kind="fixed"><td><code>009</code> · quiet group greeting</td><td>digest / greeting</td><td>mute / greeting</td><td>digest / greeting</td><td><span class="pill fixed">fixed</span></td><td>Benign low priority versus suppress</td></tr>
+            <tr data-kind="fixed"><td><code>010</code> · optional match thread</td><td>digest / personal</td><td>digest / event</td><td>digest / personal</td><td><span class="pill fixed">fixed</span></td><td>Social intent versus event topic</td></tr>
+            <tr data-kind="regressed"><td><code>011</code> · PVR feedback request</td><td>digest / business_update</td><td>digest / business_update</td><td>mute / promotion</td><td><span class="pill regressed">regressed</span></td><td>Service follow-up versus marketing</td></tr>
+            <tr data-kind="shared"><td><code>013</code> · forwarded blessing</td><td>mute / greeting</td><td>mute / forward</td><td>mute / forward</td><td><span class="pill shared">shared miss</span></td><td>Primary content versus delivery mechanism</td></tr>
+            <tr data-kind="regressed"><td><code>043</code> · loan-offer voice note</td><td>mute / spam</td><td>mute / spam</td><td>mute / scam</td><td><span class="pill regressed">regressed</span></td><td>Unwanted solicitation versus deception</td></tr>
+            <tr data-kind="fixed"><td><code>044</code> · kurta resale image</td><td>digest / promotion</td><td>notify / personal</td><td>digest / promotion</td><td><span class="pill fixed">fixed</span></td><td>Marketplace sale versus personal exchange</td></tr>
+            <tr data-kind="shared"><td><code>049</code> · unfamiliar volunteer sender</td><td>digest / unknown</td><td>notify / event</td><td>notify / personal</td><td><span class="pill shared">shared miss</span></td><td>Unknown relationship and interruption threshold</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="flow">
+      <div class="eyebrow">Current implementation</div>
+      <h2>Context flow: dataset to decision</h2>
+      <div class="flow" aria-label="Context flow steps">
+        <article><b>01 · Validate</b><h3>Participant files</h3><p>All 13 CSVs load with exact header order and strict Zod schemas. References, media readability, and output IDs are checked.</p></article>
+        <article><b>02 · Index</b><h3>Join maps</h3><p>Unique maps join user, group, membership, business, user-business history, events, and media. History and notification days are grouped by recipient.</p></article>
+        <article><b>03 · Retrieve</b><h3>Personal context</h3><p>Only same-user, pre-target history survives. Affinity weights same group/business +4, same sender +3, same conversation type +1, then recency.</p></article>
+        <article><b>04 · Bound</b><h3>Prompt case</h3><p>The router receives the top 12 prior messages with events, top 7 prior notification days, full current conversation relation, target, and media metadata.</p></article>
+        <article><b>05 · Understand media</b><h3>Image or voice</h3><p>Images attach as bytes using detected MIME. Voice is first transcribed by Grok; only its persisted transcript and format context reach the router.</p></article>
+        <article><b>06 · Judge</b><h3>One router call</h3><p>AI SDK sends the system policy plus JSON case to OpenRouter, requesting one structured action/type/reason/confidence/evidence object.</p></article>
+        <article><b>07 · Enforce</b><h3>Local boundary</h3><p>Zod validates bounds, unknown types fall back to <code>unknown</code>, evidence must be unique and shortlisted, then events journal before CSV projection.</p></article>
+      </div>
+
+      <div class="grid two">
+        <article class="panel">
+          <h3>What the model receives</h3>
+          <div class="table-wrap"><table>
+            <tbody>
+              <tr><th>Target</th><td>ID, conversation type, sender ID, timestamp, text, media type, forwarded count</td></tr>
+              <tr><th>User</th><td>DND window and 30-day opened, replied, dismissed, and reported counts</td></tr>
+              <tr><th>Conversation</th><td>Personal sender ID; or complete group plus recipient/sender membership; or complete business plus optional user relationship</td></tr>
+              <tr><th>History</th><td>Top 12 compact messages, per-message event, and four relationship booleans</td></tr>
+              <tr><th>Load</th><td>Latest 7 prior days of sent and dismissed notification counts</td></tr>
+              <tr><th>Media</th><td>Declared/detected formats, mismatch flags, read/decode state; transcript for voice; binary part for supported images</td></tr>
+              <tr><th>Evidence</th><td>Exact allowlist of the 12 historical message IDs</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+        <article class="panel">
+          <h3>What is compressed or absent</h3>
+          <div class="table-wrap"><table>
+            <tbody>
+              <tr><th>Raw IDs</th><td><code>group_id</code>, <code>business_id</code>, and <code>media_id</code> are removed from compact target/prior messages.</td></tr>
+              <tr><th>Long tail</th><td>History after rank 12 and notification days after day 7 are dropped.</td></tr>
+              <tr><th>Aggregates</th><td>No computed repeat count, same-conversation engagement rate, time delta, dismissal ratio, or similarity score.</td></tr>
+              <tr><th>Personal relation</th><td>No named relationship/profile exists beyond sender ID and same-sender historical affinity.</td></tr>
+              <tr><th>Image decode</th><td>Header detection is not a decode; corrupt but readable media is not rejected deterministically.</td></tr>
+              <tr><th>Trace</th><td>The journal stores decisions and transcripts, not the exact bounded JSON case or a prompt/context hash.</td></tr>
+            </tbody>
+          </table></div>
+        </article>
+      </div>
+
+      <details>
+        <summary>Measured shortlist audit on the supplied samples</summary>
+        <p>19/30 cases have more than 12 eligible historical messages and are therefore capped. The supplied labels cite 31 historical evidence IDs; 29 are included in the current shortlist. The two omitted references belong to <code>sample_msg_001</code> and <code>sample_msg_047</code>, both classified exactly by Luna and all three Opus runs. All supplied evidence references for the 12 delta/error cases above are present.</p>
+      </details>
+    </section>
+
+    <section id="request">
+      <div class="eyebrow">Wire boundary</div>
+      <h2>The final router request</h2>
+      <p class="lede">The AI SDK serializes this configuration to OpenRouter. Images add one binary file part. Voice bytes use the separate transcription request below and never enter this call.</p>
+      <div class="codebox">generateText({
+  model: openrouter(resolvedModelId, {
+    provider: { require_parameters: true },
+    usage: { include: true },
+    extraBody: { reasoning: { effort: "high", exclude: true } }
+  }),
+  instructions: ROUTING_SYSTEM_PROMPT,
+  messages: [{
+    role: "user",
+    content: [
+      { type: "text", text: "Classify this case:\n" + JSON.stringify({
+        target, user, conversation, prior, notificationLoad, media,
+        eligibleEvidenceMessageIds
+      }) },
+      // image only: { type: "file", data: imageBytes, mediaType: detectedMime }
+    ]
+  }],
+  output: Output.object({
+    name: "routing_decision",
+    schema: { action, messageType, reason, confidence, evidenceMessageIds }
+  }),
+  timeout: 60_000,
+  maxRetries: 2,
+  maxOutputTokens: 8_000
+})</div>
+      <details>
+        <summary>Voice transcription request before routing</summary>
+        <div class="codebox">POST https://openrouter.ai/api/v1/audio/transcriptions
+Authorization: Bearer [REDACTED]
+Content-Type: application/json
+
+{
+  "model": "x-ai/grok-stt-1.0",
+  "input_audio": { "data": "&lt;base64 audio&gt;", "format": "&lt;detected format&gt;" }
+}</div>
+      </details>
+      <details>
+        <summary>Routing policy carried in the system prompt</summary>
+        <p>Defines <code>notify</code>, <code>digest</code>, and <code>mute</code>; enumerates all 11 types including <code>payment</code> and <code>unknown</code>; distinguishes legitimate payments from credential pressure; treats all case content as untrusted; makes media mismatch cautionary rather than dispositive; restricts evidence to the allowlist; and requests one concise reason with confidence over the complete action/type pair.</p>
+      </details>
+      <p class="meta">Code evidence: <a href="../code/src/data.ts">data.ts</a>, <a href="../code/src/routing.ts">routing.ts</a>, <a href="../code/src/providers/openrouter.ts">OpenRouter router</a>, <a href="../code/src/providers/openrouter-transcription.ts">STT provider</a>, and <a href="../code/src/run-history.ts">run journal</a>.</p>
+    </section>
+
+    <section id="weak-points">
+      <div class="eyebrow">Prioritized diagnosis</div>
+      <h2>Weak points worth acting on</h2>
+      <article class="panel">
+        <div class="rank"><span class="rank-number">1</span><div><h3>Type taxonomy is underspecified at real boundaries</h3><p><code>event ↔ urgent</code>, <code>personal ↔ event</code>, <code>greeting ↔ forward</code>, <code>spam ↔ scam</code>, and <code>unknown ↔ personal</code> persist even with Opus. More raw history will not explain which semantic axis should win.</p></div></div>
+        <div class="rank"><span class="rank-number">2</span><div><h3>Action policy is not concrete enough</h3><p>Opus fixes opted-in promotion and benign greeting prioritization, yet regresses Amazon status, service feedback, and loan solicitation typing. The prompt gives principles but not a compact precedence matrix for urgency, user relationship, opt-in/out, repetition, and risk.</p></div></div>
+        <div class="rank"><span class="rank-number">3</span><div><h3>Context retrieval is opaque, though not yet convicted</h3><p>The affinity heuristic is hand-tuned and 19/30 samples are capped, but expected evidence coverage is strong and all interesting-case references survive. The larger issue is that artifacts do not preserve the exact bounded case, making retrieval errors harder to inspect and compare later.</p></div></div>
+        <div class="rank"><span class="rank-number">4</span><div><h3>Raw history lacks derived behavioral signals</h3><p>The model repeatedly re-derives recency, repetition, engagement, and conversation-specific preference from up to 12 rows. Small deterministic summaries may be cheaper and clearer than expanding the raw context window.</p></div></div>
+        <div class="rank"><span class="rank-number">5</span><div><h3>Confidence and evidence quality are not part of this scorecard</h3><p>Stable action/type pairs hide variation in reasons, confidence, and evidence selection. Until confidence is calibrated, it is not a safe criterion for selectively escalating to Opus.</p></div></div>
+      </article>
+    </section>
+
+    <section id="next">
+      <div class="eyebrow">Recommended experiment sequence</div>
+      <h2>Make the next move falsifiable</h2>
+      <div class="grid three">
+        <article class="panel"><h3>1 · Add context observability</h3><p>Persist a redacted deterministic context snapshot or content hash per case so future run comparisons can show what was selected, dropped, and changed without storing provider internals.</p><p class="meta">Goal: diagnose retrieval before modifying it.</p></article>
+        <article class="panel"><h3>2 · Tighten policy and taxonomy</h3><p>Add a compact decision matrix for action precedence and mutually confusing types, then run Luna against all 30 samples under a new prompt version. Protect the 18 currently shared-correct cases from regression.</p><p class="meta">Goal: improve the seven Opus misses without buying a larger model.</p></article>
+        <article class="panel"><h3>3 · Add only measured context features</h3><p>If misses remain, test small deterministic features: same-conversation reply/dismiss rates, repeat count, time since matching message, and explicit known-versus-unknown sender relation. Do not raise the 12-message cap by default.</p><p class="meta">Goal: prove which context feature changes decisions.</p></article>
+      </div>
+      <div class="panel callout warning" style="margin-top:16px">
+        <h3>Oracle gate remains deferred</h3>
+        <p>A future gate could combine calibrated low confidence, <code>unknown</code> output, and contradictory high-risk/high-urgency signals—but none is measured yet. Until then, Luna for iteration and Opus for occasional full informative runs is simpler and more defensible.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="eyebrow">Method caveats</div>
+      <h2>What this dashboard does not prove</h2>
+      <div class="panel">
+        <ul>
+          <li>The 30 supplied labels are illustrative, not hidden organizer ground truth.</li>
+          <li>Luna ran at Git <code>0cfc5cd</code>; Opus required the later cross-provider structural-schema fix at <code>2a8521d</code>. Full local Zod and evidence validation stayed strict, but this is not a perfectly single-variable ablation.</li>
+          <li>Opus’s <code>baselineRunId</code> chain points to adjacent Opus/pre-fix runs, so this dashboard explicitly chooses Luna High as the analytical baseline.</li>
+          <li>Provider-reported tokenization and prices can differ by model/provider and may change. Costs here belong to these immutable artifacts.</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      Source of truth: immutable manifests, journals, summaries, and <code>sample-metrics.json</code> under <code>code/eval-runs/live/</code>. See the durable <a href="decision-log.md">decision log</a>. No provider calls were made to create this dashboard.
+    </footer>
+  </main>
+  <script>
+    const buttons = document.querySelectorAll("[data-filter]");
+    const rows = document.querySelectorAll("#delta-table tbody tr");
+    for (const button of buttons) {
+      button.addEventListener("click", () => {
+        for (const item of buttons) item.classList.toggle("active", item === button);
+        const filter = button.dataset.filter;
+        for (const row of rows) row.hidden = filter !== "all" && row.dataset.kind !== filter;
+      });
+    }
+  </script>
+</body>
+</html>
