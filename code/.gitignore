@@ -1,0 +1,22 @@
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+
+# Installed dependencies and build products
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+
+# Resumable local run artifacts
+runs/
+eval-runs/
+evaluation/
+
+# Local tooling and editor state
+.agent-reviews/
+*.log
+.DS_Store
+*.swp
+*~

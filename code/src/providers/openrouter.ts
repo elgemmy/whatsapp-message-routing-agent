@@ -208,7 +208,7 @@ export function createOpenRouterRoutingProvider(
     ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
     ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
   });
-  const reasoningEffort = options.reasoningEffort ?? "max";
+  const reasoningEffort = options.reasoningEffort ?? "medium";
   const maxOutputTokens = options.maxOutputTokens ?? 8_000;
   const model = openrouter(modelId, {
     provider: { require_parameters: true },

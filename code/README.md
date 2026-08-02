@@ -1,6 +1,6 @@
 # Message Notification Router Harness
 
-This directory contains the deterministic TypeScript harness for loading the challenge data, validating contracts, recording resumable runs, and inspecting run history. Judgement-provider integration comes after this harness is verified.
+This directory is the complete runnable TypeScript submission: dataset loading, deterministic context construction, multimodal routing through OpenRouter, local validation, resumable artifacts, output generation, and tests. The final policy prompt is compiled into `src/routing.ts`; runtime never reads files outside `code/` except the supplied dataset.
 
 ## Setup
 
@@ -22,7 +22,7 @@ OPENROUTER_API_KEY=...
 # OPENROUTER_TRANSCRIPTION_MODEL=x-ai/grok-stt-1.0
 ```
 
-With no overrides, routing uses `anthropic/claude-opus-5` and transcription uses `x-ai/grok-stt-1.0`. Resolution is explicit CLI option, then environment variable, then code default. For example, `--model` overrides `OPENROUTER_MODEL`, while `--transcription-model` overrides `OPENROUTER_TRANSCRIPTION_MODEL`. The resolved models are pinned in every run manifest. Use a new run ID when changing either one, and confirm current capabilities and pricing through OpenRouter before a paid run.
+With no overrides, routing uses `anthropic/claude-opus-5` at Medium reasoning and transcription uses `x-ai/grok-stt-1.0`. Resolution is explicit CLI option, then environment variable, then code default. For example, `--model` overrides `OPENROUTER_MODEL`, while `--transcription-model` overrides `OPENROUTER_TRANSCRIPTION_MODEL`. The resolved models and reasoning setting are pinned in every run manifest. Use a new run ID when changing one, and confirm current capabilities and pricing through OpenRouter before a paid run.
 
 The provider-facing structured-output schema intentionally declares only the object shape and action enum. Complete reason, confidence, evidence-count, normalization, and evidence-allowlist checks still run locally with Zod before a case can succeed. This keeps the same validated output contract across providers whose strict JSON Schema subsets differ.
 
@@ -47,8 +47,6 @@ npm run runs:rebuild
 `npm run eval:seed` creates or resumes `runs/seed-no-judgement`. The run deliberately records one retryable `judgement_provider_unavailable` failure for every target message because no judgement provider exists yet. It does not guess labels and does not emit a partial `output.csv`.
 
 Open `runs/index.html` in a browser for the generated dashboard. `runs/history.md` and each run's `report.md` provide human-readable alternatives.
-
-For the current Luna-versus-Opus comparison, complete context-flow audit, request boundary, and prioritized next experiments, open [`../docs/analysis-dashboard.html`](../docs/analysis-dashboard.html). This is a committed evidence snapshot; generated run history remains under `eval-runs/live/index.html`.
 
 `npm run eval:sample-seed` creates `eval-runs/seed-all-wrong` with deliberately incorrect, contract-shaped predictions for the 30 provided examples plus 16 curated counterfactuals. Its expected 0/46 action, type, and exact scores prove the evaluator reports failures. Pass `--run-id` when the dataset changes, for example `npm run eval:sample-seed -- --run-id seed-augmented-v2`. It is a harness self-check, never a routing baseline. Open `eval-runs/index.html` for its case-level dashboard.
 
@@ -75,27 +73,22 @@ This bounded smoke covers text and image cases across all actions, group/busines
 
 Voice notes use one bounded OpenRouter speech-to-text call before the primary router. The default is `x-ai/grok-stt-1.0`; override it with `OPENROUTER_TRANSCRIPTION_MODEL` or `--transcription-model`. Grok is the complete-sample default because the dataset contains both MP3 and M4A audio: Qwen remains a valid opt-in experiment for supported formats, but its OpenRouter endpoint rejected the sample M4A file. The append-only journal records each transcript, detected format, audio hash, model identity, duration, and reported usage before routing, so a routing retry or resumed run reuses the transcript instead of rebilling STT. Audio bytes are never sent to the primary router.
 
-Routing defaults to OpenRouter reasoning effort `high`, the setting used for the stable Opus benchmark and the complete Luna baseline. Override it with `--reasoning-effort`; run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. The ceiling was measured rather than guessed: earlier Luna image smokes exhausted 2,000 and then 4,000 tokens with `finishReason=length`; those immutable runs remain available for inspection. Prompt `routing-v4` embeds the ordered action, type-precedence, and payment guidance in [`../docs/`](../docs/) and requires a complete reason of at most 200 characters with up to 12 materially useful evidence IDs without padding; both output limits are enforced locally.
+Routing defaults to OpenRouter reasoning effort `medium`. Override it with `--reasoning-effort`; run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. Prompt `routing-v5` is self-contained in `src/routing.ts` and applies explicit independent type/action policies, conservative tie-breakers, input grounding, a 200-character reason limit, and up to 12 materially useful evidence IDs without padding. All output limits are enforced locally.
 
-Effort is part of manifest identity, so never change it while resuming a run. For a Luna Max experiment, use `--model openai/gpt-5.6-luna --reasoning-effort max` with a fresh run ID.
+Effort is part of manifest identity, so never change it while resuming a run.
 
-For a gradual complete-sample run, reuse one run ID so successful calls and transcripts remain resumable:
+For the final complete-sample validation, reuse one run ID so successful calls and transcripts remain resumable:
 
 ```sh
-npm run route:samples -- --run-id luna-max-grok-stt-v1 --message-id sample_msg_042
-npm run route:samples -- --run-id luna-max-grok-stt-v1 --retry-failures \
-  --message-id sample_msg_041 --message-id sample_msg_042 \
-  --message-id sample_msg_043 --message-id sample_msg_007 \
-  --message-id sample_msg_048 --message-id sample_msg_049
-npm run route:samples -- --run-id luna-max-grok-stt-v1 --retry-failures
+npm run route:samples -- --run-id final-sample-v5
 ```
 
 When all 46 sample cases succeed, the run directory receives `sample-predictions.csv`, `sample-metrics.json`, and `sample-report.md`. Labels are evaluated only after provider calls have been journaled. Metrics report the 30 provided examples, 16 curated counterfactuals, and 46-case micro-total separately. Evidence gets exact-set and reference-overlap scores; reasons get a bounded complete-sentence style check and side-by-side human review; confidence gets Brier score and five-bin expected calibration error against exact action + type.
 
-After inspecting that evaluation, run targets under a distinct run ID:
+After inspecting that evaluation, run all targets under a distinct run ID:
 
 ```sh
-npm run route -- --run-id target-routing-v1 --message-id NON_AUDIO_MESSAGE_ID
+npm run route -- --run-id submission-v5
 ```
 
 Use `--limit N` or repeated `--message-id ID` options for bounded runs. An ordinary resume skips every recorded outcome. `--retry-failures` retries only failures marked retryable; successful and nonretryable cases are never rebilled. Transport, authentication, and rate-limit failures pause the batch instead of repeating the same failure across remaining cases; fix the external cause, then resume explicitly with `--retry-failures`.
@@ -104,7 +97,7 @@ A completely successful target run automatically creates its canonical `runs/<ru
 
 ```sh
 npm run output:emit -- \
-  --run-id target-routing-v1 \
+  --run-id submission-v5 \
   --output ../output.csv
 npm run validate:output -- --input ../output.csv
 ```
@@ -122,6 +115,23 @@ The required file has exactly 110 prediction rows in target order and this heade
 ```text
 message_id,action,message_type,reason,confidence,evidence_message_ids
 ```
+
+## Submission package
+
+Package this `code/` directory alongside a sibling `dataset/` directory at evaluation time. Include `src/`, `test/`, `README.md`, `.env.example`, `package.json`, `package-lock.json`, and `tsconfig.json`. Exclude `.env`, `node_modules/`, `dist/`, `runs/`, `eval-runs/`, `evaluation/`, logs, and local agent/editor state. The included `.gitignore` records these boundaries.
+
+The evaluator can reproduce the submission from a clean extraction with:
+
+```sh
+cd code
+npm ci
+npm run verify:harness
+OPENROUTER_API_KEY=... npm run route -- --run-id judge-run
+npm run output:emit -- --run-id judge-run --output ../output.csv
+npm run validate:output -- --input ../output.csv
+```
+
+If the dataset is not a sibling of `code/`, pass `--dataset /path/to/dataset` to routing and validation commands. No policy or prompt file outside this directory is required.
 
 ## Run durability
 

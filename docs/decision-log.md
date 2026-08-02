@@ -207,3 +207,13 @@ Status: measured; retain type precedence, revise action guidance separately
 - Four important misses reflect guidance-label tension rather than simple model failure: `sample_msg_010` becomes event under the scheduled-happening rule; `cf_msg_010` digests because its event is not today; `cf_msg_013` becomes urgent because it demands action within hours; and `cf_msg_012` exposes a missing immediate-safety action rule.
 - Evidence did not collapse: Luna reference F1 rose from 46.8% to 49.6% with 14 exact sets unchanged; Opus rose from 44.4% to 45.2% and from 8 to 11 exact sets. All reasons passed the structural 200-character sentence proxy. Opus Brier/ECE improved from 0.165/0.086 to 0.122/0.069, while Luna remained overconfident at 0.281/0.277.
 - Reported all-in cost was $0.029137 for Luna and $1.361226 for Opus. The longer prompt increased input/output usage and cost versus v3; preserve the immutable artifact values without generalizing provider prices.
+
+## 2026-08-02 — Final routing-v5 submission policy
+
+Status: accepted for the final Opus-only validation and target run
+
+- Replace routing-v4 with the user's final classification order, type precedence, action tree, and conservative tie-breakers. Determine type from primary communicative purpose and action independently; history changes type only when it clarifies purpose, legitimacy, or risk.
+- Preserve the v4 prompt-injection and media-mismatch grounding. Strengthen evidence grounding: default to no historical evidence, include only history that materially changes or justifies the decision, and never claim facts absent from the input.
+- Make Opus 5 with Medium reasoning and Grok STT the self-contained code defaults. Keep CLI and environment model overrides for evaluator portability, and pin the resolved configuration in resumable manifests.
+- The runtime prompt is compiled into `code/src/routing.ts`; the policy documents are human reference only. A packaged `code/` directory must not require `docs/` or any other repository source.
+- Interpret v5 label deltas carefully: unfamiliarity alone no longer implies unknown/spam/scam, event precedes personal, and legitimate time-sensitive payments remain payment. The curated labels remain indicative rather than policy authority.

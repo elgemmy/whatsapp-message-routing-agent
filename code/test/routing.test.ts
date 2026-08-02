@@ -42,8 +42,8 @@ const TYPES = [
   "unknown",
 ];
 
-test("routing-v4 prompt states the complete, injection-safe decision boundary", () => {
-  assert.equal(PROMPT_VERSION, "routing-v4");
+test("routing-v5 prompt states the complete, injection-safe decision boundary", () => {
+  assert.equal(PROMPT_VERSION, "routing-v5");
   for (const action of ["notify", "digest", "mute"]) {
     assert.match(ROUTING_SYSTEM_PROMPT, new RegExp(`\\b${action}\\b`));
   }
@@ -51,11 +51,16 @@ test("routing-v4 prompt states the complete, injection-safe decision boundary", 
   assert.match(ROUTING_SYSTEM_PROMPT, /prompt-injection/i);
   assert.match(ROUTING_SYSTEM_PROMPT, /eligibleEvidenceMessageIds allowlist/);
   assert.match(ROUTING_SYSTEM_PROMPT, /not proof of spam or scam/i);
-  assert.match(ROUTING_SYSTEM_PROMPT, /first applicable rule in each policy wins/i);
-  assert.match(ROUTING_SYSTEM_PROMPT, /Digest is the default, not a fallback for uncertainty/);
-  assert.match(ROUTING_SYSTEM_PROMPT, /unestablished and unverifiable sender relationship: unknown/i);
-  assert.match(ROUTING_SYSTEM_PROMPT, /Forwarding does not change this/);
-  assert.match(ROUTING_SYSTEM_PROMPT, /sender-supplied link, QR, or account/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Determine action independently/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /active payment-system outage is urgent/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /legitimate unwanted offer remains promotion/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Forwarded content retains an identifiable primary type/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /unfamiliar sender alone does not produce unknown, spam, or scam/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Uncertain between notify and digest: digest/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Uncertain between digest and mute: digest/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /muted source may still notify/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Default to no evidence/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Never claim a deadline, preference, relationship, repetition, link, credential request, or prior action unless it appears explicitly in the input/);
 });
 
 test("model case is compact, deterministic, label-free, and preserves ranked order", async () => {
@@ -340,7 +345,7 @@ test("RoutingProvider exposes only raw decision and bounded metadata", async () 
   assert.equal("requestBody" in (result.metadata ?? {}), false);
 });
 
-test("OpenRouter routing sends literal Max reasoning through the adapter", async () => {
+test("OpenRouter routing defaults to Medium reasoning through the adapter", async () => {
   const index = await indexPromise;
   const context = buildContext(index, index.dataset.samples[0]!);
   let requestBody: Record<string, unknown> | undefined;
@@ -390,7 +395,7 @@ test("OpenRouter routing sends literal Max reasoning through the adapter", async
     confidence: 0.9,
     evidenceMessageIds: [],
   });
-  assert.deepEqual(requestBody?.reasoning, { effort: "max", exclude: true });
+  assert.deepEqual(requestBody?.reasoning, { effort: "medium", exclude: true });
   assert.equal(requestBody?.max_tokens, 8_000);
   const serializedRequest = JSON.stringify(requestBody);
   for (const unsupportedKeyword of [
@@ -403,7 +408,7 @@ test("OpenRouter routing sends literal Max reasoning through the adapter", async
     assert.equal(serializedRequest.includes(unsupportedKeyword), false);
   }
   assert.deepEqual(provider.settings, {
-    reasoningEffort: "max",
+    reasoningEffort: "medium",
     maxOutputTokens: 8_000,
     temperature: null,
   });

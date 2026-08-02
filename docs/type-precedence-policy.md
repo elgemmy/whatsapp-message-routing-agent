@@ -1,28 +1,53 @@
-# Useful for determining the type of a message. The first rule that applies wins
+# Classification and type precedence
 
-1. Does it seek credentials, or route money through a channel the sender controls,
-   or offer an unsolicited windfall requiring action? -> scam
-2. Is it unsolicited commercial content from a sender with no legitimate
-   relationship to the recipient? -> spam
-   (Marketing from a verified brand the recipient knows is promotion even when
-   muted. Legitimacy of the sender decides spam vs promotion, not the content.)
-3. Is the sender relationship unestablished and unverifiable? -> unknown
-   This overrides the topical type.
-4. Does it state a real payment obligation or a real transaction on the
-   recipient's account? -> payment
-5. Is it selling or offering something? -> promotion
-   Peer-to-peer resale in a group is promotion, not personal.
-6. Does it demand action from the recipient within hours with a stated
-   consequence? -> urgent
-   A scheduled happening is event even when imminent. Urgent requires a demand
-   on this recipient, not just a short timeline.
-7. Is it directed at the recipient personally? -> personal
-   A direct mention about event logistics is personal, not event.
-8. Is it about a scheduled happening, its logistics, or a change to it? -> event
-9. Is it a transactional or service communication from a business about an
-   existing relationship? -> business_update
-   Feedback requests and advisories are business_update, not promotion.
-10. Is its primary purpose a well-wish? -> greeting
-    Forwarding does not change this. forwarded_count is not a type signal.
-11. Is it impersonal chain content with no other primary purpose? -> forward
-12. Otherwise -> unknown
+## Classification order
+
+1. Determine `message_type` from the target message's primary communicative purpose.
+2. Determine `action` independently using the target message plus relevant history.
+3. Do not infer action mechanically from `message_type`:
+   - urgent does not always mean notify,
+   - spam does not always mean mute,
+   - payment does not always mean notify.
+4. History may change action, but changes `message_type` only when it clarifies the
+   target message's purpose, legitimacy, or risk.
+
+## Type precedence
+
+Choose the first applicable type.
+
+1. **scam** — Meaningful evidence of deception, impersonation, credential theft,
+   financial theft, or an unsafe verification/payment flow.
+2. **urgent** — An active emergency, safety incident, critical operational failure,
+   or immediate request where delay could cause serious harm. Time sensitivity alone
+   is insufficient.
+3. **payment** — A legitimate financial transaction, obligation, or money-movement
+   status in which the recipient is a participant: bills, transfers, receipts,
+   refunds, reimbursements, payment failures, or amounts due.
+4. **event** — Timing, attendance, appointments, meetings, travel, schedules,
+   locations, or event logistics.
+5. **business_update** — A legitimate order, account, delivery, support, service, or
+   operational status not primarily about payment or an event.
+6. **promotion** — A recognizable legitimate offer, sale, commercial invitation,
+   listing, or marketing message.
+7. **spam** — Generic, unsolicited, bulk, repetitive, or low-quality solicitation
+   without meaningful deception.
+8. **greeting** — Greeting, blessing, pleasantry, or good wishes without substantive
+   content.
+9. **personal** — Ordinary interpersonal conversation, question, request, or update
+   where no more specific type applies.
+10. **forward** — Generic information, advice, or chain content passed along when no
+    more specific purpose applies. Forwarded content retains an identifiable primary
+    type.
+11. **unknown** — Use only when the meaning or relationship remains materially
+    ambiguous after considering every other type.
+
+## Type rules
+
+- Scam overrides every other type.
+- A legitimate payment remains payment even when time-sensitive; action carries its
+  interruption priority.
+- An active payment-system outage is urgent, not payment.
+- A discount conditional on paying is promotion, not payment.
+- A legitimate unwanted offer remains promotion; unwantedness affects action.
+- A forwarded greeting, event, or scam remains greeting, event, or scam.
+- An unfamiliar sender alone does not produce unknown, spam, or scam.
