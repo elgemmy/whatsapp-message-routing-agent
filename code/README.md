@@ -22,6 +22,8 @@ OPENROUTER_TRANSCRIPTION_MODEL=x-ai/grok-stt-1.0
 
 The model is configurable and pinned in every run manifest. Confirm its current modalities, structured-output support, and pricing through OpenRouter before a paid run.
 
+The provider-facing structured-output schema intentionally declares only the object shape and action enum. Complete reason, confidence, evidence-count, normalization, and evidence-allowlist checks still run locally with Zod before a case can succeed. This keeps the same validated output contract across providers whose strict JSON Schema subsets differ.
+
 ## Commands
 
 From `code/`:
