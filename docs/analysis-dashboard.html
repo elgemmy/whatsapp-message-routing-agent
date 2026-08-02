@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Router Analysis — Augmented Luna vs Opus 5</title>
+  <title>Router Analysis — Policy Guidance Before and After</title>
   <style>
     :root {
       color-scheme: dark;
@@ -90,13 +90,14 @@
   <main class="shell">
     <header>
       <div class="eyebrow">Decision dashboard · 2 August 2026</div>
-      <h1>Augmented evidence confirms the policy bottleneck—and exposes output quality.</h1>
-      <p class="lede">One matched Luna High run and one Opus 5 High run over 30 provided samples plus 16 curated counterfactuals, now measuring evidence overlap, reason style, and confidence calibration alongside action and type.</p>
-      <p class="meta">Illustrative 46-case local regression only. Counterfactual labels may be revised; this is not organizer ground truth and does not establish hidden-target accuracy. Latest measured source snapshots: <code>45b52c8</code> / <code>b385960</code>.</p>
+      <h1>Ordered guidance fixes taxonomy faster than action routing.</h1>
+      <p class="lede">A matched before/after policy experiment over 30 provided samples and 16 curated counterfactuals. Luna and Opus 5 used the same models, High reasoning, Grok STT, context, schema, and dataset; only the versioned system guidance changed.</p>
+      <p class="meta">Illustrative 46-case local regression only. Counterfactual labels may be revised; this is not organizer ground truth and does not establish hidden-target accuracy. Latest measured source snapshot: <code>e2298d1</code>.</p>
     </header>
 
     <nav class="nav" aria-label="Dashboard sections">
-      <a href="#augmented">Augmented run</a>
+      <a href="#policy">Policy before/after</a>
+      <a href="#augmented">Pre-policy baseline</a>
       <a href="#decision">Decision</a>
       <a href="#scorecard">Scorecard</a>
       <a href="#schema-test">Schema test</a>
@@ -107,8 +108,87 @@
       <a href="#next">Next move</a>
     </nav>
 
+    <section id="policy">
+      <div class="eyebrow">Latest matched experiment · routing-v3 → routing-v4</div>
+      <h2>The taxonomy moved decisively; the action policy did not.</h2>
+      <p class="lede">The three curated documents are now tracked and embedded in a self-contained prompt. This is a prompt-only experiment: no context, retrieval, model, provider, STT, schema, validator, or output-contract change.</p>
+
+      <div class="grid four">
+        <div class="panel kpi"><span>Technical completion</span><strong>92/92</strong><small>Both v4 runs · first attempt · stop</small></div>
+        <div class="panel kpi"><span>Luna action / type / exact</span><strong>−3 / +7 / 0</strong><small>40/34/32 → 37/41/32</small></div>
+        <div class="panel kpi"><span>Opus action / type / exact</span><strong>+1 / +5 / +3</strong><small>41/37/35 → 42/42/38</small></div>
+        <div class="panel kpi"><span>Opus v4 exact</span><strong>38/46</strong><small>82.6% on indicative labels</small></div>
+      </div>
+
+      <div class="grid two" style="margin-top:16px">
+        <article class="panel">
+          <h3>Before and after by slice</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Model / prompt</th><th>Provided action / type / exact</th><th>Counterfactual action / type / exact</th><th>Total action / type / exact</th></tr></thead>
+            <tbody>
+              <tr><td>Luna · v3</td><td>26 / 22 / 21</td><td>14 / 12 / 11</td><td>40 / 34 / 32</td></tr>
+              <tr><td><strong>Luna · v4</strong></td><td><strong>26 / 27 / 23</strong></td><td><strong>11 / 14 / 9</strong></td><td><strong>37 / 41 / 32</strong></td></tr>
+              <tr><td>Opus · v3</td><td>26 / 24 / 23</td><td>15 / 13 / 12</td><td>41 / 37 / 35</td></tr>
+              <tr><td><strong>Opus · v4</strong></td><td><strong>28 / 27 / 25</strong></td><td><strong>14 / 15 / 13</strong></td><td><strong>42 / 42 / 38</strong></td></tr>
+            </tbody>
+          </table></div>
+          <p class="meta">The consistent gain is type accuracy. Luna's counterfactual action loss offsets eight exact fixes; Opus converts the same policy into a net three exact gain.</p>
+        </article>
+        <article class="panel">
+          <h3>v4 case-level direction</h3>
+          <div class="grid two">
+            <div class="kpi"><span>Both exact</span><strong>31</strong><small>Up from 27</small></div>
+            <div class="kpi"><span>Opus only</span><strong>7</strong><small>Action judgment gap</small></div>
+            <div class="kpi"><span>Luna only</span><strong>1</strong><small><code>sample_msg_003</code></small></div>
+            <div class="kpi"><span>Neither exact</span><strong>7</strong><small>Four conflict with policy wording</small></div>
+          </div>
+          <p class="meta">Shared misses: <code>sample_msg_005</code>, <code>006</code>, <code>010</code>, <code>046</code>, <code>cf_msg_008</code>, <code>010</code>, and <code>013</code>.</p>
+        </article>
+      </div>
+
+      <article class="panel" style="margin-top:16px">
+        <h3>Output-quality movement</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Metric</th><th>Luna v3 → v4</th><th>Opus v3 → v4</th><th>Read</th></tr></thead>
+          <tbody>
+            <tr><td>Evidence exact sets</td><td>14 → 14</td><td>8 → 11</td><td>Policy did not trade accuracy for obvious evidence collapse.</td></tr>
+            <tr><td>Evidence precision / recall / F1</td><td>33.3/78.3/46.8% → 37.4/73.9/49.6%</td><td>29.4/91.3/44.4% → 30.5/87.0/45.2%</td><td>Both F1 scores rise slightly; reference labels remain incomplete proxies.</td></tr>
+            <tr><td>Reason style / mean / max</td><td>46/46 · 151/183 → 46/46 · 143/177 chars</td><td>46/46 · 163/198 → 46/46 · 158/198 chars</td><td>Every reason still meets the structural 200-character sentence proxy.</td></tr>
+            <tr><td>Confidence Brier / ECE ↓</td><td>.278/.274 → .281/.277</td><td>.165/.086 → .122/.069</td><td>Opus calibration improves; Luna remains uniformly overconfident.</td></tr>
+          </tbody>
+        </table></div>
+      </article>
+
+      <div class="grid two" style="margin-top:16px">
+        <article class="panel callout">
+          <div class="eyebrow">Exact fixes versus regressions</div>
+          <h3>Luna: 8 fixed, 8 regressed · Opus: 8 fixed, 5 regressed</h3>
+          <p><strong>Luna fixes:</strong> <code>002</code>, <code>011</code>, <code>044</code>, <code>048</code>, <code>049</code>, <code>cf005</code>, <code>cf007</code>, <code>cf009</code>. <strong>Regressions:</strong> <code>005</code>, <code>042</code>, <code>046</code>, <code>cf010</code>, <code>cf012</code>, <code>cf013</code>, <code>cf014</code>, <code>cf015</code>.</p>
+          <p><strong>Opus fixes:</strong> <code>002</code>, <code>004</code>, <code>011</code>, <code>013</code>, <code>043</code>, <code>049</code>, <code>cf003</code>, <code>cf011</code>. <strong>Regressions:</strong> <code>003</code>, <code>006</code>, <code>010</code>, <code>046</code>, <code>cf013</code>.</p>
+        </article>
+        <article class="panel callout warning">
+          <div class="eyebrow">Policy-label tensions</div>
+          <h3>Some “misses” are the prompt following the new guidance.</h3>
+          <p><code>sample_msg_010</code> becomes event under the scheduled-happening rule; <code>cf_msg_010</code> digests because its event is not today; and <code>cf_msg_013</code> becomes urgent because it demands action within hours. <code>cf_msg_012</code> exposes the inverse gap: an immediate broadcast emergency is not explicitly covered by the ordered action rules.</p>
+          <p class="meta">Do not revise indicative labels or policy after seeing outputs in this experiment. These tensions are inputs to the next policy pass.</p>
+        </article>
+      </div>
+
+      <article class="panel" style="margin-top:16px">
+        <h3>Latest run ledger</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Run</th><th>Action / type / exact</th><th>Input / output tokens</th><th>Reported cost</th><th>Artifacts</th></tr></thead>
+          <tbody>
+            <tr><td><code>luna-…-augmented-v4-1</code></td><td>37 / 41 / 32</td><td>129,981 / 19,269</td><td>$0.029137</td><td><a href="../code/eval-runs/live/luna-high8000-grok-stt-augmented-v4-1/sample-report.md">sample report</a> · <a href="../code/eval-runs/live/luna-high8000-grok-stt-augmented-v4-1/report.md">technical report</a></td></tr>
+            <tr><td><code>opus5-…-augmented-v4-1</code></td><td>42 / 42 / 38</td><td>216,039 / 11,188</td><td>$1.361226</td><td><a href="../code/eval-runs/live/opus5-high8000-grok-stt-augmented-v4-1/sample-report.md">sample report</a> · <a href="../code/eval-runs/live/opus5-high8000-grok-stt-augmented-v4-1/report.md">technical report</a></td></tr>
+          </tbody>
+        </table></div>
+        <p class="meta">Both manifests pin clean commit <code>e2298d1</code>, fingerprint <code>f006bf…</code>, routing-v4, High reasoning, 8,000 output tokens, and Grok STT. Each journal contains 46 first-attempt stop completions, three transcriptions, zero failed cases, and one completed event. The longer policy raised reported cost about 26% for Luna and 22% for Opus.</p>
+      </article>
+    </section>
+
     <section id="augmented">
-      <div class="eyebrow">Latest matched experiment · routing-v3</div>
+      <div class="eyebrow">Pre-guidance matched baseline · routing-v3</div>
       <h2>46 cases, five output dimensions</h2>
       <p class="lede">Both models used High reasoning, an 8,000-token ceiling, Grok STT, the same 46-case dataset fingerprint, a 200-character reason limit, and at most 12 materially useful evidence IDs. Labels were evaluated only after inference.</p>
 
@@ -187,13 +267,13 @@
       <div class="grid two">
         <article class="panel callout">
           <div class="eyebrow">Current read</div>
-          <h2>Do not add an oracle yet.</h2>
-          <p>Opus is extremely stable and gains two exact cases, but it also introduces three stable regressions and costs about <strong>46.8×</strong> the Luna baseline. We do not yet have a calibrated uncertainty signal or narrow failure cluster that can gate oracle calls reliably.</p>
+          <h2>Keep v4 taxonomy; repair action rules narrowly.</h2>
+          <p>Both models gain five or more type matches, which is the clearest measured policy effect. Do not undo that precedence. The next prompt change should target action only: immediate safety broadcasts, legitimate direct requests without a stated same-day consequence, and when unfamiliar means digest versus mute.</p>
         </article>
         <article class="panel callout warning">
           <div class="eyebrow">Strongest diagnosis</div>
-          <h2>Retrieval volume is not the first fix.</h2>
-          <p>Every supplied evidence ID for the 12 interesting Luna/Opus error-delta cases is already inside the model’s shortlist. Across all samples, 29/31 supplied references survive the 12-message cap; the two omissions are cases both models classify exactly. The immediate bottleneck looks more like <strong>action policy and type taxonomy</strong> than missing raw context.</p>
+          <h2>Model strength now matters after policy.</h2>
+          <p>With identical v4 guidance, Opus reaches 38 exact while Luna remains at 32 and differs mainly on action judgment. Opus also improves calibration, while Luna stays overconfident. Use Luna for cheap iteration, but Opus for the final informative or submission run if budget permits.</p>
         </article>
       </div>
     </section>
@@ -460,8 +540,8 @@ Content-Type: application/json
       <div class="eyebrow">Prioritized diagnosis</div>
       <h2>Weak points worth acting on</h2>
       <article class="panel">
-        <div class="rank"><span class="rank-number">1</span><div><h3>Type taxonomy is underspecified at real boundaries</h3><p><code>event ↔ urgent</code>, <code>personal ↔ event</code>, <code>greeting ↔ forward</code>, <code>spam ↔ scam</code>, and <code>unknown ↔ personal</code> persist even with Opus. More raw history will not explain which semantic axis should win.</p></div></div>
-        <div class="rank"><span class="rank-number">2</span><div><h3>Action policy is not concrete enough</h3><p>Opus fixes opted-in promotion and benign greeting prioritization, yet regresses Amazon status, service feedback, and loan solicitation typing. The prompt gives principles but not a compact precedence matrix for urgency, user relationship, opt-in/out, repetition, and risk.</p></div></div>
+        <div class="rank"><span class="rank-number">1</span><div><h3>Action precedence has uncovered gaps</h3><p>The ordered rules omit immediate broadcast emergencies, make “same-day consequence” too strict for some legitimate direct requests, and let “never engaged” suppress benign unfamiliar contact. Luna is especially literal and loses three action matches.</p></div></div>
+        <div class="rank"><span class="rank-number">2</span><div><h3>Policy and indicative labels disagree</h3><p>The new rules intentionally classify scheduled happenings as event, future scheduled information as digest, and within-hours demands as urgent. Several curated labels encode different choices. Resolve the written product policy before treating those cases as model failures.</p></div></div>
         <div class="rank"><span class="rank-number">3</span><div><h3>Context retrieval is opaque, though not yet convicted</h3><p>The affinity heuristic is hand-tuned and 19/30 samples are capped, but expected evidence coverage is strong and all interesting-case references survive. The larger issue is that artifacts do not preserve the exact bounded case, making retrieval errors harder to inspect and compare later.</p></div></div>
         <div class="rank"><span class="rank-number">4</span><div><h3>Raw history lacks derived behavioral signals</h3><p>The model repeatedly re-derives recency, repetition, engagement, and conversation-specific preference from up to 12 rows. Small deterministic summaries may be cheaper and clearer than expanding the raw context window.</p></div></div>
         <div class="rank"><span class="rank-number">5</span><div><h3>Evidence selection and confidence need explicit policy</h3><p>The augmented scorecard now exposes both: Opus recalls more reference evidence but pads its lists, while Luna is severely overconfident. Neither model's confidence is ready to gate selective escalation without calibration.</p></div></div>
@@ -472,9 +552,9 @@ Content-Type: application/json
       <div class="eyebrow">Recommended experiment sequence</div>
       <h2>Make the next move falsifiable</h2>
       <div class="grid three">
-        <article class="panel"><h3>1 · Add context observability</h3><p>Persist a redacted deterministic context snapshot or content hash per case so future run comparisons can show what was selected, dropped, and changed without storing provider internals.</p><p class="meta">Goal: diagnose retrieval before modifying it.</p></article>
-        <article class="panel"><h3>2 · Tighten policy and taxonomy</h3><p>Add a compact decision matrix for action precedence and mutually confusing types, then run Luna against all 30 samples under a new prompt version. Protect the 18 currently shared-correct cases from regression.</p><p class="meta">Goal: improve the seven Opus misses without buying a larger model.</p></article>
-        <article class="panel"><h3>3 · Add only measured context features</h3><p>If misses remain, test small deterministic features: same-conversation reply/dismiss rates, repeat count, time since matching message, and explicit known-versus-unknown sender relation. Do not raise the 12-message cap by default.</p><p class="meta">Goal: prove which context feature changes decisions.</p></article>
+        <article class="panel"><h3>1 · Reconcile policy and labels</h3><p>Decide the intended outcomes for <code>sample_msg_010</code>, <code>cf_msg_010</code>, and <code>cf_msg_013</code>. They currently penalize models for following the written precedence.</p><p class="meta">Goal: stop optimizing against contradictory supervision.</p></article>
+        <article class="panel"><h3>2 · Patch action only</h3><p>Add the smallest explicit rules for immediate safety broadcasts and legitimate direct requests, and distinguish no prior engagement from an actual opt-out or dismissal signal. Preserve the v4 type order.</p><p class="meta">Goal: recover action losses without taxonomy regression.</p></article>
+        <article class="panel"><h3>3 · Run one bounded confirmation</h3><p>Use Luna for a cheap smoke over the affected cases, then one full Opus pass only if the direction is clean. Do not change retrieval or add another model in the same experiment.</p><p class="meta">Goal: preserve causal clarity under deadline pressure.</p></article>
       </div>
       <div class="panel callout warning" style="margin-top:16px">
         <h3>Oracle gate remains deferred</h3>
@@ -488,6 +568,7 @@ Content-Type: application/json
       <div class="panel">
         <ul>
           <li>The 30 supplied labels and 16 curated counterfactuals are illustrative, not hidden organizer ground truth. The curated cases may contain mistakes and should be revised as policy becomes explicit.</li>
+          <li>The routing-v3 to routing-v4 comparison is a clean prompt-only change at commit <code>e2298d1</code>, but each condition has only one model run, so Luna sampling variance is still a plausible contributor.</li>
           <li>Luna ran at Git <code>0cfc5cd</code>; Opus required the later cross-provider structural-schema fix at <code>2a8521d</code>. Full local Zod and evidence validation stayed strict, but this is not a perfectly single-variable ablation.</li>
           <li>Opus’s <code>baselineRunId</code> chain points to adjacent Opus/pre-fix runs, so this dashboard explicitly chooses Luna High as the analytical baseline.</li>
           <li>Provider-reported tokenization and prices can differ by model/provider and may change. Costs here belong to these immutable artifacts.</li>

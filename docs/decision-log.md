@@ -195,3 +195,15 @@ Status: accepted as a prompt-only `routing-v4` experiment
 - Explicitly decide action and type independently. Type uncertainty does not choose the action, forwarding alone does not choose the type, and a sender-controlled payment channel remains scam regardless of familiarity.
 - Preserve the guidance as written for this measurement rather than silently repairing its edge cases. Known indicative-label tensions include a non-today scheduled event (`cf_msg_010`), an immediate broadcast emergency not explicitly covered by the ordered action rules (`cf_msg_012`), and ambiguous same-day timing for the known/unfamiliar volunteer pair (`cf_msg_007`/`cf_msg_008`).
 - Compare fresh High-effort, 8,000-token, Grok-STT Luna and Opus runs against the immutable `routing-v3` augmented baselines, reporting the 30 provided and 16 counterfactual slices separately.
+
+## 2026-08-02 — Routing-v4 guidance results
+
+Status: measured; retain type precedence, revise action guidance separately
+
+- Both clean runs at commit `e2298d1` completed 46/46 cases on their first routing attempt with `stop` finishes and three successful Grok transcriptions. Their manifests pin `routing-v4`, High reasoning, 8,000 output tokens, and unchanged dataset fingerprint `f006bf062cbb5fc28a49aef111a34e4cab0347721beb71dc45f11bfee872a8c3`.
+- Luna moved from 40/34/32 to 37/41/32 action/type/exact. The guidance produced eight exact fixes and eight regressions: type improved materially, action regressed, and total exact stayed flat. Provided exact rose 21 to 23 while counterfactual exact fell 11 to 9.
+- Opus moved from 41/37/35 to 42/42/38, with eight exact fixes and five regressions. Provided exact rose 23 to 25 and counterfactual exact rose 12 to 13.
+- The consistent result is a taxonomy gain: Luna gained seven type matches and Opus gained five. Preserve the ordered type policy in the next prompt iteration. Repair action policy independently, especially immediate broadcast emergencies, legitimate direct requests without an explicit same-day consequence, and the difference between no prior engagement and an actual opt-out/dismissal signal.
+- Four important misses reflect guidance-label tension rather than simple model failure: `sample_msg_010` becomes event under the scheduled-happening rule; `cf_msg_010` digests because its event is not today; `cf_msg_013` becomes urgent because it demands action within hours; and `cf_msg_012` exposes a missing immediate-safety action rule.
+- Evidence did not collapse: Luna reference F1 rose from 46.8% to 49.6% with 14 exact sets unchanged; Opus rose from 44.4% to 45.2% and from 8 to 11 exact sets. All reasons passed the structural 200-character sentence proxy. Opus Brier/ECE improved from 0.165/0.086 to 0.122/0.069, while Luna remained overconfident at 0.281/0.277.
+- Reported all-in cost was $0.029137 for Luna and $1.361226 for Opus. The longer prompt increased input/output usage and cost versus v3; preserve the immutable artifact values without generalizing provider prices.
