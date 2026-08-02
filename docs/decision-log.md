@@ -225,3 +225,14 @@ Status: user-directed replacement of the Medium submission setting
 - Stop the in-progress Medium target run after 13/110 successful decisions and preserve its partial journal. Do not resume or publish it as the submission run.
 - Restore Opus High as both the CLI default and provider fallback. Keep routing-v5, Grok STT, the 8,000-token ceiling, strict local validation, retryable Zod handling, and deterministic 200-character reason bounding unchanged.
 - Run a fresh complete High sample validation before starting any fresh High target run. Use distinct run IDs so Medium and High artifacts cannot be mixed.
+
+## 2026-08-02 — Final routing-v5 High sample result
+
+Status: measured; awaiting manual review before a fresh target run
+
+- `opus5-high8000-grok-stt-augmented-v5-1` completed 46/46 cases on clean commit `84c1265`, with 46 first-attempt `stop` routing decisions, three successful Grok transcriptions, and no retries or failures.
+- High scored 40/37/33 action/type/exact overall: 26/24/22 on the 30 provided examples and 14/13/11 on the 16 curated counterfactuals. Medium v5 scored 38/38/33, so High recovered two action matches, lost one type match, and did not improve exact accuracy.
+- The earlier routing-v4 High result remains stronger against indicative labels at 42/42/38. V5 High fixed `sample_msg_046` and `cf_msg_013` relative to v4, but regressed seven exact cases. This is evidence that the final policy definition, not reasoning effort alone, drives the score shift.
+- High evidence exact sets were 14/46 with 43.3% reference F1. All 46 reasons met the 200-character complete-sentence proxy. Confidence Brier/ECE were 0.186/0.133, worse than v4 High's 0.122/0.069.
+- Provider-reported usage was 232,185 input and 9,894 output tokens at $1.409606. Preserve this artifact value without generalizing pricing.
+- Do not start a fresh High target run until the user reviews this result. The interrupted Medium target artifact remains partial at 13/110 and must not be published.
