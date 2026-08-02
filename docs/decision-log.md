@@ -127,3 +127,13 @@ Status: measured; keep as a stable upper-bound benchmark, not the default
 - Opus improved three Terra-majority misses (`006`, `010`, `012`) and regressed two Terra-majority correct cases (`004`, `013`). Four cases stayed wrong under both (`002`, `005`, `011`, `049`); Terra had no majority for `043`.
 - Provider-reported cost was $0.734466, $0.734896, and $0.726391: $2.195753 total and $0.731918 mean. That is about 47x the recorded Luna High run cost for a two-case exact gain. Anthropic tokenization also reported about 120k input tokens per run versus about 72k for OpenAI models over the same logical prompt data.
 - Model tier is therefore a real but bounded factor: Opus is more accurate and dramatically more stable than Terra, but seven unanimous misses and three regressions show that model strength does not remove the context/policy bottleneck. Keep Opus as an upper-bound oracle for the next context-construction pass; do not change the default or add an ensemble yet.
+
+## 2026-08-02 — Evaluator-safe model defaults with local overrides
+
+Status: accepted
+
+- Require only `OPENROUTER_API_KEY` from the evaluation environment. Hardcode `anthropic/claude-opus-5` as the primary routing default and `x-ai/grok-stt-1.0` as the transcription default so a tester does not need to reconstruct the measured model configuration.
+- Resolve each model independently in this order: explicit CLI option, non-blank environment override, then code default. Keep `OPENROUTER_MODEL` available for casual Luna development and `OPENROUTER_TRANSCRIPTION_MODEL` for measured STT variants.
+- Default reasoning effort to `high`, matching the three stable Opus runs and the complete Luna baseline. A Luna Max experiment remains explicit and receives a fresh run ID because manifests reject configuration drift.
+- Keep `.env.example` credential-safe: the API key field is empty and optional model overrides are commented. Never modify or commit a user's real `.env`.
+- Do not add an oracle or model council now. Opus remains the evaluator-safe default and informative upper-bound model; Luna remains the inexpensive development override while context construction is iterated.

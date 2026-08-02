@@ -9,6 +9,7 @@ import {
   writeSampleRunProgress,
 } from "./evaluate.js";
 import { decisionToPrediction } from "./domain.js";
+import { DEFAULT_REASONING_EFFORT, resolveModelConfig } from "./model-config.js";
 import {
   createOpenRouterRoutingProvider,
   type ReasoningEffort,
@@ -81,7 +82,7 @@ function positiveIntegerOption(name: string): number | undefined {
 }
 
 function reasoningEffortOption(): ReasoningEffort {
-  const value = option("--reasoning-effort") ?? "max";
+  const value = option("--reasoning-effort") ?? DEFAULT_REASONING_EFFORT;
   if (
     value !== "max" &&
     value !== "xhigh" &&
@@ -209,11 +210,12 @@ async function route(partition: "targets" | "samples"): Promise<void> {
   if (!process.env.OPENROUTER_API_KEY?.trim()) {
     throw new Error("OPENROUTER_API_KEY is required; set it in the environment or code/.env");
   }
-  const modelId = requiredOption("--model", "OPENROUTER_MODEL");
-  const transcriptionModelId =
-    option("--transcription-model") ??
-    process.env.OPENROUTER_TRANSCRIPTION_MODEL?.trim() ??
-    "x-ai/grok-stt-1.0";
+  const modelConfig = resolveModelConfig({
+    routingCli: option("--model"),
+    routingEnvironment: process.env.OPENROUTER_MODEL,
+    transcriptionCli: option("--transcription-model"),
+    transcriptionEnvironment: process.env.OPENROUTER_TRANSCRIPTION_MODEL,
+  });
   const runId = requiredRunId();
   const { datasetRoot, runsDir, evalRunsDir } = paths();
   const index = await buildDatasetIndex(await loadDataset(datasetRoot));
@@ -225,12 +227,12 @@ async function route(partition: "targets" | "samples"): Promise<void> {
   const limit = positiveIntegerOption("--limit");
   const messageIds = options("--message-id");
   const provider = createOpenRouterRoutingProvider({
-    modelId,
+    modelId: modelConfig.routingModel,
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     reasoningEffort: reasoningEffortOption(),
   });
   const transcriber = createOpenRouterTranscriptionProvider({
-    modelId: transcriptionModelId,
+    modelId: modelConfig.transcriptionModel,
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   });
   const summary = await createOrResumeRun({

@@ -12,15 +12,17 @@ npm ci
 npm test
 ```
 
-Copy `.env.example` to `.env` and set your OpenRouter key before live routing. `.env` is ignored and must never be committed.
+Copy `.env.example` to `.env` and set your OpenRouter key before live routing. The key is the only required environment value. `.env` is ignored and must never be committed.
 
 ```text
 OPENROUTER_API_KEY=...
-OPENROUTER_MODEL=openai/gpt-5.6-luna
-OPENROUTER_TRANSCRIPTION_MODEL=x-ai/grok-stt-1.0
+
+# Optional development overrides:
+# OPENROUTER_MODEL=openai/gpt-5.6-luna
+# OPENROUTER_TRANSCRIPTION_MODEL=x-ai/grok-stt-1.0
 ```
 
-The model is configurable and pinned in every run manifest. Confirm its current modalities, structured-output support, and pricing through OpenRouter before a paid run.
+With no overrides, routing uses `anthropic/claude-opus-5` and transcription uses `x-ai/grok-stt-1.0`. Resolution is explicit CLI option, then environment variable, then code default. For example, `--model` overrides `OPENROUTER_MODEL`, while `--transcription-model` overrides `OPENROUTER_TRANSCRIPTION_MODEL`. The resolved models are pinned in every run manifest. Use a new run ID when changing either one, and confirm current capabilities and pricing through OpenRouter before a paid run.
 
 The provider-facing structured-output schema intentionally declares only the object shape and action enum. Complete reason, confidence, evidence-count, normalization, and evidence-allowlist checks still run locally with Zod before a case can succeed. This keeps the same validated output contract across providers whose strict JSON Schema subsets differ.
 
@@ -34,9 +36,9 @@ npm test
 npm run verify:harness
 npm run validate:data
 npm run validate:output
-npm run route:samples -- --run-id luna-routing-v1-smoke
-npm run route -- --run-id luna-target-routing-v1
-npm run output:emit -- --run-id luna-target-routing-v1 --output ../output.csv
+npm run route:samples -- --run-id sample-routing-v1-smoke
+npm run route -- --run-id target-routing-v1
+npm run output:emit -- --run-id target-routing-v1 --output ../output.csv
 npm run eval:seed
 npm run eval:sample-seed
 npm run runs:rebuild
@@ -56,7 +58,7 @@ Start with supplied samples so label quality can be measured after inference wit
 
 ```sh
 npm run route:samples -- \
-  --run-id luna-routing-v1-smoke \
+  --run-id sample-routing-v1-smoke \
   --message-id sample_msg_001 \
   --message-id sample_msg_007 \
   --message-id sample_msg_015 \
@@ -67,13 +69,13 @@ npm run route:samples -- \
   --message-id sample_msg_049
 ```
 
-This bounded Luna smoke covers text and image cases across all actions, group/business/personal relationships, opt-in and opt-out promotions, scam pressure, a legitimate safety advisory, an unfamiliar sender, and benign extension mismatches. Artifacts live inside `eval-runs/live/<run-id>/`; `sample-progress.md` and `sample-progress.json` compare attempted cases only after inference and keep technical failures separate from semantic accuracy.
+This bounded smoke covers text and image cases across all actions, group/business/personal relationships, opt-in and opt-out promotions, scam pressure, a legitimate safety advisory, an unfamiliar sender, and benign extension mismatches. Artifacts live inside `eval-runs/live/<run-id>/`; `sample-progress.md` and `sample-progress.json` compare attempted cases only after inference and keep technical failures separate from semantic accuracy.
 
-Voice notes use one bounded OpenRouter speech-to-text call before Luna. The default is `x-ai/grok-stt-1.0`; override it with `OPENROUTER_TRANSCRIPTION_MODEL` or `--transcription-model`. Grok is the complete-sample default because the dataset contains both MP3 and M4A audio: Qwen remains a valid opt-in experiment for supported formats, but its OpenRouter endpoint rejected the sample M4A file. The append-only journal records each transcript, detected format, audio hash, model identity, duration, and reported usage before routing, so a Luna retry or resumed run reuses the transcript instead of rebilling STT. Audio bytes are never sent to Luna.
+Voice notes use one bounded OpenRouter speech-to-text call before the primary router. The default is `x-ai/grok-stt-1.0`; override it with `OPENROUTER_TRANSCRIPTION_MODEL` or `--transcription-model`. Grok is the complete-sample default because the dataset contains both MP3 and M4A audio: Qwen remains a valid opt-in experiment for supported formats, but its OpenRouter endpoint rejected the sample M4A file. The append-only journal records each transcript, detected format, audio hash, model identity, duration, and reported usage before routing, so a routing retry or resumed run reuses the transcript instead of rebilling STT. Audio bytes are never sent to the primary router.
 
-Luna routing uses OpenRouter reasoning effort `max`. Run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. The ceiling was measured rather than guessed: image smokes exhausted 2,000 and then 4,000 tokens with `finishReason=length`; those immutable runs remain available for inspection. Prompt `routing-v2` asks for a complete short reason and allows enough schema headroom to avoid the prior 240-character truncation boundary.
+Routing defaults to OpenRouter reasoning effort `high`, the setting used for the stable Opus benchmark and the complete Luna baseline. Override it with `--reasoning-effort`; run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. The ceiling was measured rather than guessed: earlier Luna image smokes exhausted 2,000 and then 4,000 tokens with `finishReason=length`; those immutable runs remain available for inspection. Prompt `routing-v2` asks for a complete short reason and allows enough schema headroom to avoid the prior 240-character truncation boundary.
 
-Use `--reasoning-effort high` for a separate measured variant when Max repeatedly exhausts the output budget. Effort is part of manifest identity, so never change it while resuming a run. Max remains the default; this option exists to compare reliability and accuracy without changing models or code.
+Effort is part of manifest identity, so never change it while resuming a run. For a Luna Max experiment, use `--model openai/gpt-5.6-luna --reasoning-effort max` with a fresh run ID.
 
 For a gradual complete-sample run, reuse one run ID so successful calls and transcripts remain resumable:
 
@@ -91,7 +93,7 @@ When all 30 sample cases succeed, the run directory receives `sample-predictions
 After inspecting that evaluation, run targets under a distinct run ID:
 
 ```sh
-npm run route -- --run-id luna-target-routing-v1 --message-id NON_AUDIO_MESSAGE_ID
+npm run route -- --run-id target-routing-v1 --message-id NON_AUDIO_MESSAGE_ID
 ```
 
 Use `--limit N` or repeated `--message-id ID` options for bounded runs. An ordinary resume skips every recorded outcome. `--retry-failures` retries only failures marked retryable; successful and nonretryable cases are never rebilled. Transport, authentication, and rate-limit failures pause the batch instead of repeating the same failure across remaining cases; fix the external cause, then resume explicitly with `--retry-failures`.
@@ -100,7 +102,7 @@ A completely successful target run automatically creates its canonical `runs/<ru
 
 ```sh
 npm run output:emit -- \
-  --run-id luna-target-routing-v1 \
+  --run-id target-routing-v1 \
   --output ../output.csv
 npm run validate:output -- --input ../output.csv
 ```
