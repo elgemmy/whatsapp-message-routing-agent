@@ -50,7 +50,7 @@ Open `runs/index.html` in a browser for the generated dashboard. `runs/history.m
 
 For the current Luna-versus-Opus comparison, complete context-flow audit, request boundary, and prioritized next experiments, open [`../docs/analysis-dashboard.html`](../docs/analysis-dashboard.html). This is a committed evidence snapshot; generated run history remains under `eval-runs/live/index.html`.
 
-`npm run eval:sample-seed` creates `eval-runs/seed-all-wrong` with deliberately incorrect, contract-shaped predictions for the 30 solved examples. Its expected 0/30 action, type, and exact scores prove the evaluator reports failures. It is a harness self-check, never a routing baseline. Open `eval-runs/index.html` for its case-level dashboard.
+`npm run eval:sample-seed` creates `eval-runs/seed-all-wrong` with deliberately incorrect, contract-shaped predictions for the 30 provided examples plus 16 curated counterfactuals. Its expected 0/46 action, type, and exact scores prove the evaluator reports failures. Pass `--run-id` when the dataset changes, for example `npm run eval:sample-seed -- --run-id seed-augmented-v2`. It is a harness self-check, never a routing baseline. Open `eval-runs/index.html` for its case-level dashboard.
 
 `npm run verify:harness` is the single clean-check command. `npm run validate:output` validates `dataset/output.csv` against the exact headers, target coverage/order, allowed values, and historical-evidence boundary. It intentionally fails while the starter template is blank.
 
@@ -75,7 +75,7 @@ This bounded smoke covers text and image cases across all actions, group/busines
 
 Voice notes use one bounded OpenRouter speech-to-text call before the primary router. The default is `x-ai/grok-stt-1.0`; override it with `OPENROUTER_TRANSCRIPTION_MODEL` or `--transcription-model`. Grok is the complete-sample default because the dataset contains both MP3 and M4A audio: Qwen remains a valid opt-in experiment for supported formats, but its OpenRouter endpoint rejected the sample M4A file. The append-only journal records each transcript, detected format, audio hash, model identity, duration, and reported usage before routing, so a routing retry or resumed run reuses the transcript instead of rebilling STT. Audio bytes are never sent to the primary router.
 
-Routing defaults to OpenRouter reasoning effort `high`, the setting used for the stable Opus benchmark and the complete Luna baseline. Override it with `--reasoning-effort`; run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. The ceiling was measured rather than guessed: earlier Luna image smokes exhausted 2,000 and then 4,000 tokens with `finishReason=length`; those immutable runs remain available for inspection. Prompt `routing-v2` asks for a complete short reason and allows enough schema headroom to avoid the prior 240-character truncation boundary.
+Routing defaults to OpenRouter reasoning effort `high`, the setting used for the stable Opus benchmark and the complete Luna baseline. Override it with `--reasoning-effort`; run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. The ceiling was measured rather than guessed: earlier Luna image smokes exhausted 2,000 and then 4,000 tokens with `finishReason=length`; those immutable runs remain available for inspection. Prompt `routing-v3` requires a complete reason of at most 200 characters and allows up to 12 materially useful evidence IDs without padding; both limits are enforced locally.
 
 Effort is part of manifest identity, so never change it while resuming a run. For a Luna Max experiment, use `--model openai/gpt-5.6-luna --reasoning-effort max` with a fresh run ID.
 
@@ -90,7 +90,7 @@ npm run route:samples -- --run-id luna-max-grok-stt-v1 --retry-failures \
 npm run route:samples -- --run-id luna-max-grok-stt-v1 --retry-failures
 ```
 
-When all 30 sample cases succeed, the run directory receives `sample-predictions.csv`, `sample-metrics.json`, and `sample-report.md`. Labels are evaluated only after provider calls have been journaled.
+When all 46 sample cases succeed, the run directory receives `sample-predictions.csv`, `sample-metrics.json`, and `sample-report.md`. Labels are evaluated only after provider calls have been journaled. Metrics report the 30 provided examples, 16 curated counterfactuals, and 46-case micro-total separately. Evidence gets exact-set and reference-overlap scores; reasons get a bounded complete-sentence style check and side-by-side human review; confidence gets Brier score and five-bin expected calibration error against exact action + type.
 
 After inspecting that evaluation, run targets under a distinct run ID:
 
@@ -142,7 +142,7 @@ Generated summaries, reports, dashboards, sample metrics, and output files are p
 ## Evaluation boundaries
 
 - Contract and data-integrity checks are objective.
-- The 30 solved samples are an illustrative regression set, not organizer ground truth or training data.
-- Hidden target action/type quality, reason usefulness, and confidence calibration cannot be measured locally without trusted labels.
+- The 30 provided samples and 16 curated counterfactuals are illustrative regression sets, not organizer ground truth or training data.
+- Evidence overlap compares one reference set and may miss other relevant history. Reason style is not semantic usefulness. Hidden target quality cannot be measured locally without trusted labels or the organizer rubric.
 - Media extension mismatches are deterministic context signals, never automatic spam/scam decisions. Header recognition is not decoding; the current harness reports `decodeStatus: not_attempted` honestly.
 - Model prompts contain only a capped deterministic context: at most 12 eligible historical messages and 7 prior notification-load days. Supplied sample labels are never serialized into provider input.

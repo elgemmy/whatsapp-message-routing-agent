@@ -9,12 +9,17 @@ import {
 } from "../src/data.js";
 import { normalizeMessageType, normalizeRawDecision } from "../src/domain.js";
 import { resolveDatasetFile } from "../src/media.js";
+import { buildRoutingCase } from "../src/routing.js";
 import { datasetRoot, indexPromise } from "./helpers.js";
 
 test("loads and indexes the real participant dataset", async () => {
   const index = await indexPromise;
   assert.equal(index.dataset.messages.length, 110);
-  assert.equal(index.dataset.samples.length, 30);
+  assert.equal(index.dataset.samples.length, 46);
+  assert.equal(
+    index.dataset.samples.filter((sample) => sample.message_id.startsWith("cf_msg_")).length,
+    16,
+  );
   assert.equal(index.dataset.history.length, 412);
   assert.equal(index.dataset.events.length, 412);
   assert.equal(index.mediaById.size, 33);
@@ -65,6 +70,24 @@ test("all supplied sample evidence is same-user history before the sample", asyn
       assert.ok(history);
       assert.equal(history.user_id, sample.user_id);
       assert.ok(history.created_at < sample.created_at);
+    }
+  }
+});
+
+test("curated counterfactual evidence is visible in the bounded routing case", async () => {
+  const index = await indexPromise;
+  for (const sample of index.dataset.samples.filter((candidate) =>
+    candidate.message_id.startsWith("cf_msg_"),
+  )) {
+    const eligible = new Set(
+      buildRoutingCase(buildContext(index, sample)).eligibleEvidenceMessageIds,
+    );
+    if (sample.evidence_message_ids === "none") continue;
+    for (const evidenceId of sample.evidence_message_ids.split(";")) {
+      assert.ok(
+        eligible.has(evidenceId),
+        `${sample.message_id}: ${evidenceId} must be visible to the router`,
+      );
     }
   }
 });

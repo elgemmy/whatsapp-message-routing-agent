@@ -2,6 +2,7 @@ import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "csv-parse/sync";
 import {
+  MAX_EVIDENCE_MESSAGES,
   OUTPUT_HEADERS,
   PredictionRowSchema,
   type PredictionRow,
@@ -16,6 +17,11 @@ function parseEvidence(value: string): string[] {
   }
   if (new Set(ids).size !== ids.length) {
     throw new Error(`Duplicate evidence_message_ids value: ${value}`);
+  }
+  if (ids.length > MAX_EVIDENCE_MESSAGES) {
+    throw new Error(
+      `evidence_message_ids may contain at most ${MAX_EVIDENCE_MESSAGES} IDs`,
+    );
   }
   return ids;
 }

@@ -13,8 +13,8 @@
     "route": "npm run build && node --env-file-if-exists=.env dist/src/cli.js route-targets",
     "route:samples": "npm run build && node --env-file-if-exists=.env dist/src/cli.js route-samples",
     "output:emit": "npm run build && node dist/src/cli.js emit-output",
-    "eval:seed": "npm run build && node dist/src/cli.js seed --run-id seed-no-judgement",
-    "eval:sample-seed": "npm run build && node dist/src/cli.js eval-sample-seed --run-id seed-all-wrong",
+    "eval:seed": "npm run build && node dist/src/cli.js seed",
+    "eval:sample-seed": "npm run build && node dist/src/cli.js eval-sample-seed",
     "runs:rebuild": "npm run build && node dist/src/cli.js rebuild-runs"
   },
   "dependencies": {

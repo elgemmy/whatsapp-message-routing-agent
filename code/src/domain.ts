@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const ACTIONS = ["notify", "digest", "mute"] as const;
+export const MAX_REASON_CHARACTERS = 200;
+export const MAX_EVIDENCE_MESSAGES = 12;
 export const MESSAGE_TYPES = [
   "personal",
   "urgent",
@@ -25,9 +27,11 @@ export const DecisionSchema = z
   .object({
     action: ActionSchema,
     messageType: MessageTypeSchema,
-    reason: z.string().trim().min(1),
+    reason: z.string().trim().min(1).max(MAX_REASON_CHARACTERS),
     confidence: z.number().finite().min(0).max(1),
-    evidenceMessageIds: z.array(z.string().trim().min(1)),
+    evidenceMessageIds: z
+      .array(z.string().trim().min(1))
+      .max(MAX_EVIDENCE_MESSAGES),
   })
   .strict();
 
@@ -89,7 +93,7 @@ export const PredictionRowSchema = z
     message_id: z.string().min(1),
     action: ActionSchema,
     message_type: MessageTypeSchema,
-    reason: z.string().trim().min(1),
+    reason: z.string().trim().min(1).max(MAX_REASON_CHARACTERS),
     confidence: CsvConfidenceSchema,
     evidence_message_ids: z.string().min(1),
   })

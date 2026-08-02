@@ -89,15 +89,90 @@ test("rejects blank CSV confidence rather than coercing it to zero", () => {
   );
 });
 
+test("enforces the submission reason and evidence limits", () => {
+  const base = {
+    message_id: "msg_test",
+    action: "digest" as const,
+    message_type: "unknown" as const,
+    reason: "x".repeat(200),
+    confidence: 0.5,
+    evidence_message_ids: "none",
+  };
+  assert.equal(PredictionRowSchema.safeParse(base).success, true);
+  assert.equal(
+    PredictionRowSchema.safeParse({ ...base, reason: "x".repeat(201) }).success,
+    false,
+  );
+});
+
 test("sample evaluator self-check can guarantee zero action and type matches", async () => {
   const index = await indexPromise;
   const predictions = makeDeliberatelyWrongSamplePredictions(index.dataset.samples);
   const evaluation = evaluateSamples(index.dataset.samples, predictions);
   assert.equal(evaluation.label, "illustrative_sample_regression");
-  assert.equal(evaluation.total, 30);
+  assert.equal(evaluation.total, 46);
   assert.equal(evaluation.actionCorrect, 0);
   assert.equal(evaluation.messageTypeCorrect, 0);
   assert.equal(evaluation.exactCorrect, 0);
+  assert.equal(evaluation.bySampleSet.provided.total, 30);
+  assert.equal(evaluation.bySampleSet.counterfactual.total, 16);
+});
+
+test("sample evaluator reports evidence, reason-style, and confidence proxies", async () => {
+  const index = await indexPromise;
+  const provided = index.dataset.samples.find(
+    (sample) => sample.message_id === "sample_msg_001",
+  )!;
+  const counterfactual = index.dataset.samples.find(
+    (sample) => sample.message_id === "cf_msg_003",
+  )!;
+  const predictions = [
+    PredictionRowSchema.parse({
+      message_id: provided.message_id,
+      action: provided.action,
+      message_type: provided.message_type,
+      reason: "This is a complete and useful sentence.",
+      confidence: 0.8,
+      evidence_message_ids: provided.evidence_message_ids,
+    }),
+    PredictionRowSchema.parse({
+      message_id: counterfactual.message_id,
+      action: "notify",
+      message_type: "urgent",
+      reason: "This explanation lacks terminal punctuation",
+      confidence: 0.6,
+      evidence_message_ids: "none",
+    }),
+  ];
+  const evaluation = evaluateSamples([provided, counterfactual], predictions);
+  assert.equal(evaluation.schemaVersion, 2);
+  assert.equal(evaluation.bySampleSet.provided.total, 1);
+  assert.equal(evaluation.bySampleSet.counterfactual.total, 1);
+  assert.equal(evaluation.evidence.exactSetMatches, 2);
+  assert.equal(evaluation.evidence.f1, 1);
+  assert.equal(evaluation.reasonStyle.completeSentenceStyle, 1);
+  assert.ok(Math.abs(evaluation.confidenceCalibration.brierScore - 0.2) < 1e-12);
+  assert.equal(evaluation.cases[1]?.evidence.f1, null);
+});
+
+test("evidence reference metrics score a missing prediction as zero recall", async () => {
+  const index = await indexPromise;
+  const sample = index.dataset.samples.find(
+    (candidate) => candidate.evidence_message_ids !== "none",
+  )!;
+  const prediction = PredictionRowSchema.parse({
+    message_id: sample.message_id,
+    action: sample.action,
+    message_type: sample.message_type,
+    reason: "The decision is supported by the available context.",
+    confidence: 0.9,
+    evidence_message_ids: "none",
+  });
+  const evaluation = evaluateSamples([sample], [prediction]);
+  assert.equal(evaluation.evidence.precision, null);
+  assert.equal(evaluation.evidence.recall, 0);
+  assert.equal(evaluation.evidence.f1, 0);
+  assert.equal(evaluation.evidence.exactSetMatches, 0);
 });
 
 test("persists the all-wrong sample evaluator seed and readable history", async (t) => {
@@ -113,7 +188,7 @@ test("persists the all-wrong sample evaluator seed and readable history", async 
   assert.equal(evaluation.exactCorrect, 0);
   await access(path.join(temporaryRoot, "seed-all-wrong", "metrics.json"));
   await access(path.join(temporaryRoot, "seed-all-wrong", "predictions.csv"));
-  assert.match(await readFile(path.join(temporaryRoot, "history.md"), "utf8"), /0\/30/);
+  assert.match(await readFile(path.join(temporaryRoot, "history.md"), "utf8"), /0\/46/);
   assert.match(await readFile(path.join(temporaryRoot, "index.html"), "utf8"), /seed-all-wrong/);
 });
 

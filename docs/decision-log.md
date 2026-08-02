@@ -160,3 +160,14 @@ Status: measured; structural schema accepted, semantic variance remains
 - Full decisions are not deterministic for either family: every pairwise complete decision differs. Luna changes action in 6/90 pair comparisons, type in 10/90, evidence order in 39/90, and evidence set in 24/90; Opus changes 0/90 action/type pairs, 19/90 evidence orders, and 14/90 evidence sets.
 - Reported new-run cost was $0.015142, $0.007537, and $0.007330 despite identical input tokens and the same routed provider. Preserve these artifact values without inferring a new permanent price; caching or provider accounting may explain the spread.
 - This is an operational before/after comparison, not causal proof: the pre-schema condition has only one older run. A matched old-schema replication would require an isolated historical worktree and fresh contemporaneous spend.
+
+## 2026-08-02 — Augmented local evaluation and output-quality proxies
+
+Status: accepted for the next Luna/Opus comparison; labels remain illustrative
+
+- Preserve `docs/counterfactual_sample_messages.csv` as the curated source and append its 16 text cases to `dataset/sample_messages.csv`, yielding 30 provided cases plus 16 counterfactuals. Reports must show both slices and the 46-case micro-total separately.
+- Treat all sample labels as indicative rather than organizer ground truth. Several counterfactuals deliberately probe ambiguous policy boundaries, including spam/promotion, personal/unknown, personal/event, event/urgent, and payment/scam.
+- Correct `cf_msg_011` and `cf_msg_012` from `message_0001` to `message_0130`: both references were valid same-user history, but only the latter is present in the router's bounded 12-message shortlist. All counterfactual reference evidence is now visible to the model.
+- Extend the local evaluator without a second judging model. Evidence receives exact-set agreement plus reference-only micro precision/recall/F1; confidence receives Brier score and five-bin expected calibration error against exact action + type. Reason evaluation enforces the 200-character/complete-sentence style boundary and exposes expected/predicted reasons side by side, but does not pretend to measure semantic usefulness.
+- Advance to prompt `routing-v3`. Enforce at most 200 reason characters and at most 12 evidence IDs throughout local Zod/output validation. Ask the model to include only materially useful evidence and never pad the list.
+- Keep these limitations explicit: another historical ID may be relevant even when it differs from the single sample reference; structural reason style is not the hidden judge's usefulness score; the organizer's weighting and rubric remain unknown.

@@ -42,8 +42,8 @@ const TYPES = [
   "unknown",
 ];
 
-test("routing-v2 prompt states the complete, injection-safe decision boundary", () => {
-  assert.equal(PROMPT_VERSION, "routing-v2");
+test("routing-v3 prompt states the complete, injection-safe decision boundary", () => {
+  assert.equal(PROMPT_VERSION, "routing-v3");
   for (const action of ["notify", "digest", "mute"]) {
     assert.match(ROUTING_SYSTEM_PROMPT, new RegExp(`\\b${action}\\b`));
   }
@@ -408,12 +408,18 @@ test("provider schema stays structural while local decision bounds remain strict
   const structurallyValid = {
     action: "notify" as const,
     messageType: "urgent",
-    reason: "x".repeat(401),
+    reason: "x".repeat(201),
     confidence: 2,
     evidenceMessageIds: Array.from({ length: MAX_PRIOR_MESSAGES + 1 }, (_, index) => `message_${index}`),
   };
   assert.equal(ProviderRoutingDecisionSchema.safeParse(structurallyValid).success, true);
   assert.equal(RoutingDecisionOutputSchema.safeParse(structurallyValid).success, false);
+});
+
+test("routing prompt asks for useful bounded evidence and a 200-character reason", () => {
+  assert.match(ROUTING_SYSTEM_PROMPT, /up to 12 evidence IDs/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /never pad the list/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /at most 200 characters/);
 });
 
 test("invalid structured output retains bounded failed-call usage", async () => {

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse } from "csv-parse/sync";
 import { z } from "zod";
+import { MAX_EVIDENCE_MESSAGES, MAX_REASON_CHARACTERS } from "./domain.js";
 import {
   inspectMedia,
   resolveDatasetFile,
@@ -180,7 +181,7 @@ const SampleMessageSchema = MessageSchema.extend({
     "scam",
     "unknown",
   ]),
-  reason: requiredText,
+  reason: requiredText.max(MAX_REASON_CHARACTERS),
   confidence: requiredConfidence,
   evidence_message_ids: requiredText,
 }).strict();
@@ -381,6 +382,7 @@ async function parseCsvFile<T>(args: {
   let actualHeaders: string[] = [];
   const records = parse(input, {
     bom: true,
+    record_delimiter: ["\r\n", "\n"],
     columns: (headers: string[]) => {
       actualHeaders = headers;
       return headers;
@@ -663,7 +665,18 @@ export function assertDatasetIntegrity(index: DatasetIndex): void {
 
   for (const sample of dataset.samples) {
     if (sample.evidence_message_ids === "none") continue;
-    for (const evidenceId of sample.evidence_message_ids.split(";")) {
+    const evidenceIds = sample.evidence_message_ids.split(";");
+    expect(
+      errors,
+      evidenceIds.length <= MAX_EVIDENCE_MESSAGES,
+      `${sample.message_id}: too many sample evidence IDs`,
+    );
+    expect(
+      errors,
+      new Set(evidenceIds).size === evidenceIds.length,
+      `${sample.message_id}: duplicate sample evidence IDs`,
+    );
+    for (const evidenceId of evidenceIds) {
       const history = index.historyById.get(evidenceId);
       expect(errors, history !== undefined, `${sample.message_id}: unknown sample evidence ${evidenceId}`);
       expect(

@@ -327,6 +327,11 @@ async function route(partition: "targets" | "samples"): Promise<void> {
               actionCorrect: evaluation.actionCorrect,
               messageTypeCorrect: evaluation.messageTypeCorrect,
               exactCorrect: evaluation.exactCorrect,
+              evidenceExactSetMatches: evaluation.evidence.exactSetMatches,
+              evidenceReferenceF1: evaluation.evidence.f1,
+              reasonCompleteSentenceStyle: evaluation.reasonStyle.completeSentenceStyle,
+              confidenceBrierScore: evaluation.confidenceCalibration.brierScore,
+              bySampleSet: evaluation.bySampleSet,
             }
           : null,
         progress: progress

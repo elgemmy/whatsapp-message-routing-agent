@@ -2,10 +2,36 @@ import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SampleMessage } from "./data.js";
 import { serializePredictions } from "./contract.js";
-import { PredictionRowSchema, type PredictionRow } from "./domain.js";
+import {
+  MAX_REASON_CHARACTERS,
+  PredictionRowSchema,
+  type PredictionRow,
+} from "./domain.js";
+
+export type SampleSet = "provided" | "counterfactual";
+
+type EvidenceEvaluation = {
+  referenceAvailable: boolean;
+  expectedMessageIds: string[];
+  predictedMessageIds: string[];
+  intersectionCount: number;
+  exactSetMatch: boolean;
+  precision: number | null;
+  recall: number | null;
+  f1: number | null;
+};
+
+type ReasonStyleEvaluation = {
+  characters: number;
+  atMost200Characters: boolean;
+  terminalPunctuation: boolean;
+  noLineBreaks: boolean;
+  completeSentenceStyle: boolean;
+};
 
 export type EvaluationCase = {
   messageId: string;
+  sampleSet: SampleSet;
   modality: "text" | "image" | "voice";
   expectedAction: string;
   predictedAction: string;
@@ -14,10 +40,15 @@ export type EvaluationCase = {
   predictedMessageType: string;
   messageTypeCorrect: boolean;
   exactCorrect: boolean;
+  expectedReason: string;
+  predictedReason: string;
+  reasonStyle: ReasonStyleEvaluation;
+  evidence: EvidenceEvaluation;
+  confidence: number;
+  confidenceBrier: number;
 };
 
-export type SampleEvaluation = {
-  label: "illustrative_sample_regression";
+export type SampleAggregate = {
   total: number;
   actionCorrect: number;
   messageTypeCorrect: number;
@@ -25,7 +56,51 @@ export type SampleEvaluation = {
   actionAccuracy: number;
   messageTypeAccuracy: number;
   exactAccuracy: number;
+  evidence: {
+    exactSetMatches: number;
+    exactSetAccuracy: number;
+    referenceAvailableCases: number;
+    predictedNonemptyCases: number;
+    intersectionCount: number;
+    predictedCountOnReferenceCases: number;
+    referenceCount: number;
+    precision: number | null;
+    recall: number | null;
+    f1: number | null;
+  };
+  reasonStyle: {
+    atMost200Characters: number;
+    atMost200Rate: number;
+    completeSentenceStyle: number;
+    completeSentenceStyleRate: number;
+    characters: { min: number; mean: number; max: number };
+  };
+  confidenceCalibration: {
+    outcome: "exact_action_and_type";
+    brierScore: number;
+    expectedCalibrationError: number;
+    bins: Array<{
+      lower: number;
+      upper: number;
+      count: number;
+      meanConfidence: number;
+      exactAccuracy: number;
+      gap: number;
+    }>;
+  };
   byModality: Record<string, { total: number; exactCorrect: number }>;
+};
+
+export type SampleEvaluation = SampleAggregate & {
+  schemaVersion: 2;
+  label: "illustrative_sample_regression";
+  bySampleSet: Record<SampleSet, SampleAggregate>;
+  limitations: {
+    labels: string;
+    evidence: string;
+    reason: string;
+    confidence: string;
+  };
   cases: EvaluationCase[];
 };
 
@@ -49,6 +124,191 @@ export type SampleProgress = {
   failures: Array<Extract<SampleProgressOutcome, { status: "failed" }>>;
 };
 
+function sampleSetFor(messageId: string): SampleSet {
+  return messageId.startsWith("cf_msg_") ? "counterfactual" : "provided";
+}
+
+function parseEvidence(value: string): string[] {
+  return value === "none" ? [] : value.split(";");
+}
+
+function divide(numerator: number, denominator: number): number {
+  return denominator === 0 ? 0 : numerator / denominator;
+}
+
+function nullableDivide(
+  numerator: number,
+  denominator: number,
+): number | null {
+  return denominator === 0 ? null : numerator / denominator;
+}
+
+function evaluateEvidence(expectedValue: string, predictedValue: string): EvidenceEvaluation {
+  const expectedMessageIds = parseEvidence(expectedValue);
+  const predictedMessageIds = parseEvidence(predictedValue);
+  const expected = new Set(expectedMessageIds);
+  const predicted = new Set(predictedMessageIds);
+  const intersectionCount = predictedMessageIds.filter((id) => expected.has(id)).length;
+  const referenceAvailable = expectedMessageIds.length > 0;
+  const exactSetMatch =
+    expected.size === predicted.size &&
+    expectedMessageIds.every((id) => predicted.has(id));
+  if (!referenceAvailable) {
+    return {
+      referenceAvailable,
+      expectedMessageIds,
+      predictedMessageIds,
+      intersectionCount,
+      exactSetMatch,
+      precision: null,
+      recall: null,
+      f1: null,
+    };
+  }
+  const precision = nullableDivide(intersectionCount, predictedMessageIds.length);
+  const recall = intersectionCount / expectedMessageIds.length;
+  const f1 = divide(2 * intersectionCount, predictedMessageIds.length + expectedMessageIds.length);
+  return {
+    referenceAvailable,
+    expectedMessageIds,
+    predictedMessageIds,
+    intersectionCount,
+    exactSetMatch,
+    precision,
+    recall,
+    f1,
+  };
+}
+
+function evaluateReasonStyle(reason: string): ReasonStyleEvaluation {
+  const characters = [...reason].length;
+  const terminalPunctuation = /[.!?]["')\]]?$/.test(reason.trim());
+  const noLineBreaks = !/[\r\n]/.test(reason);
+  return {
+    characters,
+    atMost200Characters: characters <= MAX_REASON_CHARACTERS,
+    terminalPunctuation,
+    noLineBreaks,
+    completeSentenceStyle: terminalPunctuation && noLineBreaks,
+  };
+}
+
+function aggregateCases(cases: readonly EvaluationCase[]): SampleAggregate {
+  const total = cases.length;
+  const actionCorrect = cases.filter((item) => item.actionCorrect).length;
+  const messageTypeCorrect = cases.filter((item) => item.messageTypeCorrect).length;
+  const exactCorrect = cases.filter((item) => item.exactCorrect).length;
+  const byModality: SampleAggregate["byModality"] = {};
+  for (const item of cases) {
+    const bucket = byModality[item.modality] ?? { total: 0, exactCorrect: 0 };
+    bucket.total += 1;
+    bucket.exactCorrect += Number(item.exactCorrect);
+    byModality[item.modality] = bucket;
+  }
+
+  const evidenceReferenceCases = cases.filter((item) => item.evidence.referenceAvailable);
+  const intersectionCount = evidenceReferenceCases.reduce(
+    (sum, item) => sum + item.evidence.intersectionCount,
+    0,
+  );
+  const predictedCountOnReferenceCases = evidenceReferenceCases.reduce(
+    (sum, item) => sum + item.evidence.predictedMessageIds.length,
+    0,
+  );
+  const referenceCount = evidenceReferenceCases.reduce(
+    (sum, item) => sum + item.evidence.expectedMessageIds.length,
+    0,
+  );
+  const reasonLengths = cases.map((item) => item.reasonStyle.characters);
+
+  const bins: SampleAggregate["confidenceCalibration"]["bins"] = [];
+  let expectedCalibrationError = 0;
+  for (let index = 0; index < 5; index += 1) {
+    const lower = index / 5;
+    const upper = (index + 1) / 5;
+    const members = cases.filter((item) => {
+      if (index === 4) return item.confidence >= lower && item.confidence <= upper;
+      return item.confidence >= lower && item.confidence < upper;
+    });
+    const meanConfidence = divide(
+      members.reduce((sum, item) => sum + item.confidence, 0),
+      members.length,
+    );
+    const binExactAccuracy = divide(
+      members.filter((item) => item.exactCorrect).length,
+      members.length,
+    );
+    const gap = members.length === 0 ? 0 : Math.abs(meanConfidence - binExactAccuracy);
+    expectedCalibrationError += divide(members.length, total) * gap;
+    bins.push({
+      lower,
+      upper,
+      count: members.length,
+      meanConfidence,
+      exactAccuracy: binExactAccuracy,
+      gap,
+    });
+  }
+
+  return {
+    total,
+    actionCorrect,
+    messageTypeCorrect,
+    exactCorrect,
+    actionAccuracy: divide(actionCorrect, total),
+    messageTypeAccuracy: divide(messageTypeCorrect, total),
+    exactAccuracy: divide(exactCorrect, total),
+    evidence: {
+      exactSetMatches: cases.filter((item) => item.evidence.exactSetMatch).length,
+      exactSetAccuracy: divide(
+        cases.filter((item) => item.evidence.exactSetMatch).length,
+        total,
+      ),
+      referenceAvailableCases: evidenceReferenceCases.length,
+      predictedNonemptyCases: cases.filter(
+        (item) => item.evidence.predictedMessageIds.length > 0,
+      ).length,
+      intersectionCount,
+      predictedCountOnReferenceCases,
+      referenceCount,
+      precision: nullableDivide(intersectionCount, predictedCountOnReferenceCases),
+      recall: nullableDivide(intersectionCount, referenceCount),
+      f1: nullableDivide(2 * intersectionCount, predictedCountOnReferenceCases + referenceCount),
+    },
+    reasonStyle: {
+      atMost200Characters: cases.filter(
+        (item) => item.reasonStyle.atMost200Characters,
+      ).length,
+      atMost200Rate: divide(
+        cases.filter((item) => item.reasonStyle.atMost200Characters).length,
+        total,
+      ),
+      completeSentenceStyle: cases.filter(
+        (item) => item.reasonStyle.completeSentenceStyle,
+      ).length,
+      completeSentenceStyleRate: divide(
+        cases.filter((item) => item.reasonStyle.completeSentenceStyle).length,
+        total,
+      ),
+      characters: {
+        min: reasonLengths.length === 0 ? 0 : Math.min(...reasonLengths),
+        mean: divide(reasonLengths.reduce((sum, length) => sum + length, 0), total),
+        max: reasonLengths.length === 0 ? 0 : Math.max(...reasonLengths),
+      },
+    },
+    confidenceCalibration: {
+      outcome: "exact_action_and_type",
+      brierScore: divide(
+        cases.reduce((sum, item) => sum + item.confidenceBrier, 0),
+        total,
+      ),
+      expectedCalibrationError,
+      bins,
+    },
+    byModality,
+  };
+}
+
 export function evaluateSamples(
   samples: readonly SampleMessage[],
   predictionRows: readonly unknown[],
@@ -68,8 +328,11 @@ export function evaluateSamples(
     }
     const actionCorrect = prediction.action === sample.action;
     const messageTypeCorrect = prediction.message_type === sample.message_type;
+    const exactCorrect = actionCorrect && messageTypeCorrect;
+    const confidenceBrier = (prediction.confidence - Number(exactCorrect)) ** 2;
     return {
       messageId: sample.message_id,
+      sampleSet: sampleSetFor(sample.message_id),
       modality: sample.media_type ?? "text",
       expectedAction: sample.action,
       predictedAction: prediction.action,
@@ -77,32 +340,35 @@ export function evaluateSamples(
       expectedMessageType: sample.message_type,
       predictedMessageType: prediction.message_type,
       messageTypeCorrect,
-      exactCorrect: actionCorrect && messageTypeCorrect,
+      exactCorrect,
+      expectedReason: sample.reason,
+      predictedReason: prediction.reason,
+      reasonStyle: evaluateReasonStyle(prediction.reason),
+      evidence: evaluateEvidence(
+        sample.evidence_message_ids,
+        prediction.evidence_message_ids,
+      ),
+      confidence: prediction.confidence,
+      confidenceBrier,
     };
   });
-
-  const byModality: SampleEvaluation["byModality"] = {};
-  for (const item of cases) {
-    const bucket = byModality[item.modality] ?? { total: 0, exactCorrect: 0 };
-    bucket.total += 1;
-    bucket.exactCorrect += Number(item.exactCorrect);
-    byModality[item.modality] = bucket;
-  }
-
-  const total = cases.length;
-  const actionCorrect = cases.filter((item) => item.actionCorrect).length;
-  const messageTypeCorrect = cases.filter((item) => item.messageTypeCorrect).length;
-  const exactCorrect = cases.filter((item) => item.exactCorrect).length;
+  const aggregate = aggregateCases(cases);
   return {
+    schemaVersion: 2,
     label: "illustrative_sample_regression",
-    total,
-    actionCorrect,
-    messageTypeCorrect,
-    exactCorrect,
-    actionAccuracy: total === 0 ? 0 : actionCorrect / total,
-    messageTypeAccuracy: total === 0 ? 0 : messageTypeCorrect / total,
-    exactAccuracy: total === 0 ? 0 : exactCorrect / total,
-    byModality,
+    ...aggregate,
+    bySampleSet: {
+      provided: aggregateCases(cases.filter((item) => item.sampleSet === "provided")),
+      counterfactual: aggregateCases(
+        cases.filter((item) => item.sampleSet === "counterfactual"),
+      ),
+    },
+    limitations: {
+      labels: "Provided and curated labels are illustrative, not organizer ground truth.",
+      evidence: "Evidence overlap compares one reference set; other historical IDs may also be relevant.",
+      reason: "Reason metrics cover length and sentence style only; semantic usefulness needs human or judge review.",
+      confidence: "Calibration is measured against illustrative exact action-and-type outcomes on this small set.",
+    },
     cases,
   };
 }
@@ -158,30 +424,75 @@ function escapeMarkdown(value: string): string {
   return value.replaceAll("|", "\\|").replaceAll("\n", " ");
 }
 
+function percentage(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function optionalPercentage(value: number | null): string {
+  return value === null ? "n/a" : percentage(value);
+}
+
+function renderMetricTable(evaluation: SampleEvaluation): string {
+  const rows = (
+    [
+      ["Provided samples", evaluation.bySampleSet.provided],
+      ["Curated counterfactuals", evaluation.bySampleSet.counterfactual],
+      ["Augmented total", evaluation],
+    ] as const
+  )
+    .map(
+      ([name, metrics]) =>
+        `| ${name} | ${metrics.total} | ${metrics.actionCorrect}/${metrics.total} (${percentage(metrics.actionAccuracy)}) | ${metrics.messageTypeCorrect}/${metrics.total} (${percentage(metrics.messageTypeAccuracy)}) | ${metrics.exactCorrect}/${metrics.total} (${percentage(metrics.exactAccuracy)}) | ${metrics.evidence.exactSetMatches}/${metrics.total} (${percentage(metrics.evidence.exactSetAccuracy)}) | ${optionalPercentage(metrics.evidence.f1)} | ${metrics.reasonStyle.completeSentenceStyle}/${metrics.total} | ${metrics.confidenceCalibration.brierScore.toFixed(4)} |`,
+    )
+    .join("\n");
+  return `| Set | Cases | Action | Type | Exact pair | Evidence exact set | Evidence reference F1 | Reason style | Confidence Brier ↓ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+${rows}`;
+}
+
+function renderCaseTable(evaluation: SampleEvaluation): string {
+  return evaluation.cases
+    .map(
+      (item) =>
+        `| ${escapeMarkdown(item.messageId)} | ${item.sampleSet} | ${item.modality} | ${item.expectedAction}/${item.expectedMessageType} | ${item.predictedAction}/${item.predictedMessageType} | ${item.exactCorrect ? "pass" : "fail"} | ${item.evidence.exactSetMatch ? "pass" : "fail"} | ${item.reasonStyle.completeSentenceStyle ? `${item.reasonStyle.characters} chars` : "style fail"} | ${item.confidence.toFixed(2)} |`,
+    )
+    .join("\n");
+}
+
+function renderReasonAndEvidenceDetails(evaluation: SampleEvaluation): string {
+  return evaluation.cases
+    .map(
+      (item) => `### ${escapeMarkdown(item.messageId)}
+
+- Expected decision: \`${item.expectedAction} / ${item.expectedMessageType}\`
+- Predicted decision: \`${item.predictedAction} / ${item.predictedMessageType}\`
+- Expected evidence: \`${escapeMarkdown(item.evidence.expectedMessageIds.join(";") || "none")}\`
+- Predicted evidence: \`${escapeMarkdown(item.evidence.predictedMessageIds.join(";") || "none")}\`
+- Evidence reference F1: ${item.evidence.f1 === null ? "n/a (reference is none)" : item.evidence.f1.toFixed(3)}
+- Expected reason: ${escapeMarkdown(item.expectedReason)}
+- Predicted reason: ${escapeMarkdown(item.predictedReason)}`,
+    )
+    .join("\n\n");
+}
+
 function renderEvaluationReport(
   manifest: EvaluationManifest,
   evaluation: SampleEvaluation,
 ): string {
-  const cases = evaluation.cases
-    .map(
-      (item) =>
-        `| ${escapeMarkdown(item.messageId)} | ${item.modality} | ${item.expectedAction} | ${item.predictedAction} | ${item.expectedMessageType} | ${item.predictedMessageType} | ${item.exactCorrect ? "pass" : "fail"} |`,
-    )
-    .join("\n");
   return `# Evaluation ${manifest.runId}
 
-This is an **illustrative sample regression**, not organizer ground truth and not training data.
+This is an **illustrative local regression**, not organizer ground truth and not training data. The curated counterfactual labels are indicative and may be revised.
 
 - Strategy: \`${manifest.strategy}\`
 - Dataset: \`${manifest.datasetFingerprint}\`
-- Cases: ${evaluation.total}
-- Action correct: ${evaluation.actionCorrect}/${evaluation.total}
-- Message type correct: ${evaluation.messageTypeCorrect}/${evaluation.total}
-- Exact action + type: ${evaluation.exactCorrect}/${evaluation.total}
 
-| Message | Modality | Expected action | Predicted action | Expected type | Predicted type | Exact |
-| --- | --- | --- | --- | --- | --- | --- |
-${cases}
+${renderMetricTable(evaluation)}
+
+Evidence F1 only scores cases with at least one reference ID. Evidence exact-set accuracy also tests whether \`none\` was correctly selected. Reason scoring is a structural 200-character/complete-sentence proxy; semantic usefulness remains a manual or model-judge review. Confidence Brier uses exact action + type as the outcome.
+
+| Message | Set | Modality | Expected | Predicted | Exact | Evidence set | Reason | Confidence |
+| --- | --- | --- | --- | --- | --- | --- | --- | ---: |
+${renderCaseTable(evaluation)}
 `;
 }
 
@@ -224,7 +535,7 @@ async function rebuildEvaluationHistory(evalRunsDir: string): Promise<void> {
     path.join(evalRunsDir, "history.md"),
     `# Sample Evaluation History
 
-These metrics are illustrative regressions over the 30 supplied solved samples.
+These metrics are illustrative regressions over the sample cases loaded by each run. Totals may differ after fixture augmentation.
 
 | Run | Created | Strategy | Action | Type | Exact |
 | --- | --- | --- | --- | --- | --- |
@@ -314,26 +625,23 @@ export async function writeSampleRunEvaluation(args: {
     path.join(runDir, "sample-metrics.json"),
     `${JSON.stringify(evaluation, null, 2)}\n`,
   );
-  const caseRows = evaluation.cases
-    .map(
-      (item) =>
-        `| ${escapeMarkdown(item.messageId)} | ${item.modality} | ${item.expectedAction} | ${item.predictedAction} | ${item.expectedMessageType} | ${item.predictedMessageType} | ${item.exactCorrect ? "pass" : "fail"} |`,
-    )
-    .join("\n");
   await atomicWrite(
     path.join(runDir, "sample-report.md"),
     `# Provider sample evaluation
 
-This is an **illustrative sample regression**, evaluated only after inference. Sample labels were not included in provider prompts.
+This is an **illustrative local regression**, evaluated only after inference. Sample labels were not included in provider prompts. The 16 curated counterfactual labels are indicative and may be revised.
 
-- Cases: ${evaluation.total}
-- Action correct: ${evaluation.actionCorrect}/${evaluation.total}
-- Message type correct: ${evaluation.messageTypeCorrect}/${evaluation.total}
-- Exact action + type: ${evaluation.exactCorrect}/${evaluation.total}
+${renderMetricTable(evaluation)}
 
-| Message | Modality | Expected action | Predicted action | Expected type | Predicted type | Exact |
-| --- | --- | --- | --- | --- | --- | --- |
-${caseRows}
+Evidence F1 only scores cases with at least one reference ID. Evidence exact-set accuracy also tests whether \`none\` was correctly selected. Reason scoring is a structural 200-character/complete-sentence proxy; semantic usefulness remains a manual or model-judge review. Confidence Brier uses exact action + type as the outcome.
+
+| Message | Set | Modality | Expected | Predicted | Exact | Evidence set | Reason | Confidence |
+| --- | --- | --- | --- | --- | --- | --- | --- | ---: |
+${renderCaseTable(evaluation)}
+
+## Reason and evidence comparison
+
+${renderReasonAndEvidenceDetails(evaluation)}
 `,
   );
   return evaluation;
@@ -424,9 +732,10 @@ This is an **illustrative partial regression**, evaluated only after inference. 
 - Attempted: ${progress.attempted}/${progress.totalAvailable}
 - Technical success: ${progress.technicalSucceeded}/${progress.attempted}
 - Technical failure: ${progress.technicalFailed}/${progress.attempted}
-- Action correct among successful: ${evaluation.actionCorrect}/${evaluation.total}
-- Message type correct among successful: ${evaluation.messageTypeCorrect}/${evaluation.total}
-- Exact action + type among successful: ${evaluation.exactCorrect}/${evaluation.total}
+
+${renderMetricTable(evaluation)}
+
+Evidence and confidence metrics use only technically successful cases. Reason style is structural, not a semantic usefulness score.
 
 ${sections}
 `,
