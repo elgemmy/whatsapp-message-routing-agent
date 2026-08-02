@@ -30,6 +30,19 @@ export const RoutingDecisionOutputSchema = z
   })
   .strict();
 
+// Keep provider JSON Schema structural for cross-provider compatibility.
+// The complete bounds remain enforced by RoutingDecisionOutputSchema and
+// DecisionSchema after the provider returns an object.
+export const ProviderRoutingDecisionSchema = z
+  .object({
+    action: z.enum(["notify", "digest", "mute"]),
+    messageType: z.string(),
+    reason: z.string(),
+    confidence: z.number(),
+    evidenceMessageIds: z.array(z.string()),
+  })
+  .strict();
+
 export type RoutingRawDecision = z.infer<typeof RoutingDecisionOutputSchema>;
 
 export type RoutingCallMetadata = {

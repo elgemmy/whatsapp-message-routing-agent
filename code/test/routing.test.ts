@@ -19,6 +19,7 @@ import {
   buildRoutingMessages,
   MAX_NOTIFICATION_DAYS,
   MAX_PRIOR_MESSAGES,
+  ProviderRoutingDecisionSchema,
   PROMPT_VERSION,
   ROUTING_SYSTEM_PROMPT,
   RoutingDecisionOutputSchema,
@@ -386,11 +387,33 @@ test("OpenRouter routing sends literal Max reasoning through the adapter", async
   });
   assert.deepEqual(requestBody?.reasoning, { effort: "max", exclude: true });
   assert.equal(requestBody?.max_tokens, 8_000);
+  const serializedRequest = JSON.stringify(requestBody);
+  for (const unsupportedKeyword of [
+    '"minimum"',
+    '"maximum"',
+    '"minLength"',
+    '"maxLength"',
+    '"maxItems"',
+  ]) {
+    assert.equal(serializedRequest.includes(unsupportedKeyword), false);
+  }
   assert.deepEqual(provider.settings, {
     reasoningEffort: "max",
     maxOutputTokens: 8_000,
     temperature: null,
   });
+});
+
+test("provider schema stays structural while local decision bounds remain strict", () => {
+  const structurallyValid = {
+    action: "notify" as const,
+    messageType: "urgent",
+    reason: "x".repeat(401),
+    confidence: 2,
+    evidenceMessageIds: Array.from({ length: MAX_PRIOR_MESSAGES + 1 }, (_, index) => `message_${index}`),
+  };
+  assert.equal(ProviderRoutingDecisionSchema.safeParse(structurallyValid).success, true);
+  assert.equal(RoutingDecisionOutputSchema.safeParse(structurallyValid).success, false);
 });
 
 test("invalid structured output retains bounded failed-call usage", async () => {
@@ -477,6 +500,12 @@ test("provider errors are reduced to stable retry policy without raw payloads", 
     classifyOpenRouterError(apiError(400, { error: { code: 502 } })).code,
     "provider_unavailable",
   );
+  assert.deepEqual(classifyOpenRouterError(apiError(400)), {
+    code: "provider_rejected",
+    message: "OpenRouter rejected the request.",
+    retryable: true,
+    stopRun: true,
+  });
   assert.deepEqual(
     classifyOpenRouterError(
       apiError(404, {

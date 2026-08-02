@@ -16,6 +16,7 @@ import {
 import type { RoutingContext } from "../data.js";
 import {
   buildRoutingMessages,
+  ProviderRoutingDecisionSchema,
   PROMPT_VERSION,
   ROUTING_SYSTEM_PROMPT,
   RoutingDecisionOutputSchema,
@@ -111,7 +112,7 @@ export function classifyOpenRouterError(error: unknown): ClassifiedOpenRouterErr
     if (error.isRetryable || status === undefined) {
       return { code: "network_error", message: "OpenRouter request failed temporarily.", retryable: true, stopRun: true };
     }
-    return { code: "provider_rejected", message: "OpenRouter rejected the request.", retryable: false };
+    return { code: "provider_rejected", message: "OpenRouter rejected the request.", retryable: true, stopRun: true };
   }
   if (
     NoObjectGeneratedError.isInstance(error) ||
@@ -240,7 +241,7 @@ export function createOpenRouterRoutingProvider(
           instructions: ROUTING_SYSTEM_PROMPT,
           messages: await buildRoutingMessages(context, datasetRoot, voiceTranscript),
           output: Output.object({
-            schema: RoutingDecisionOutputSchema,
+            schema: ProviderRoutingDecisionSchema,
             name: "routing_decision",
             description: "A personalized message notification routing decision.",
           }),
@@ -266,7 +267,7 @@ export function createOpenRouterRoutingProvider(
       }
       let rawDecision: unknown;
       try {
-        rawDecision = result.output;
+        rawDecision = RoutingDecisionOutputSchema.parse(result.output);
       } catch (error) {
         throw {
           openRouterFailure: error,
