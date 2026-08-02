@@ -42,8 +42,8 @@ const TYPES = [
   "unknown",
 ];
 
-test("routing-v3 prompt states the complete, injection-safe decision boundary", () => {
-  assert.equal(PROMPT_VERSION, "routing-v3");
+test("routing-v4 prompt states the complete, injection-safe decision boundary", () => {
+  assert.equal(PROMPT_VERSION, "routing-v4");
   for (const action of ["notify", "digest", "mute"]) {
     assert.match(ROUTING_SYSTEM_PROMPT, new RegExp(`\\b${action}\\b`));
   }
@@ -51,6 +51,11 @@ test("routing-v3 prompt states the complete, injection-safe decision boundary", 
   assert.match(ROUTING_SYSTEM_PROMPT, /prompt-injection/i);
   assert.match(ROUTING_SYSTEM_PROMPT, /eligibleEvidenceMessageIds allowlist/);
   assert.match(ROUTING_SYSTEM_PROMPT, /not proof of spam or scam/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /first applicable rule in each policy wins/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Digest is the default, not a fallback for uncertainty/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /unestablished and unverifiable sender relationship: unknown/i);
+  assert.match(ROUTING_SYSTEM_PROMPT, /Forwarding does not change this/);
+  assert.match(ROUTING_SYSTEM_PROMPT, /sender-supplied link, QR, or account/i);
 });
 
 test("model case is compact, deterministic, label-free, and preserves ranked order", async () => {

@@ -185,3 +185,13 @@ Status: measured; use as the pre-policy baseline
 - Opus confidence was materially better calibrated against exact action + type: Brier 0.165 and five-bin ECE 0.086 versus Luna 0.278 and 0.274. Luna assigned every case confidence above 0.8 despite 14 exact misses, so its confidence is not a safe oracle gate.
 - Reported all-in cost was $0.023054 for Luna and $1.119196 for Opus, about 48.5 times higher for three additional exact pairs. Luna recorded one initial sandbox-network failure without reported usage, then succeeded on all 46 cases; Opus succeeded on every routing attempt.
 - The manifests are marked dirty because the user's policy drafts were intentionally left untracked during the runs. The committed routing/evaluator source and dataset fingerprint are pinned. Luna's successful calls ran after the history-only compatibility commit `b385960`, while its manifest retains creation SHA `45b52c8`; no routing or prompt code changed between those commits.
+
+## 2026-08-02 — Ordered policy guidance experiment
+
+Status: accepted as a prompt-only `routing-v4` experiment
+
+- Track the user's three guidance documents and embed their ordered action, type-precedence, and payment rules directly in the system prompt. Keeping the runtime prompt self-contained preserves the submission archive and avoids a policy loader or another dependency.
+- Keep context construction, provider topology, models, schemas, evidence selection, and output validation unchanged so the paired Luna and Opus runs isolate the effect of guidance wording.
+- Explicitly decide action and type independently. Type uncertainty does not choose the action, forwarding alone does not choose the type, and a sender-controlled payment channel remains scam regardless of familiarity.
+- Preserve the guidance as written for this measurement rather than silently repairing its edge cases. Known indicative-label tensions include a non-today scheduled event (`cf_msg_010`), an immediate broadcast emergency not explicitly covered by the ordered action rules (`cf_msg_012`), and ambiguous same-day timing for the known/unfamiliar volunteer pair (`cf_msg_007`/`cf_msg_008`).
+- Compare fresh High-effort, 8,000-token, Grok-STT Luna and Opus runs against the immutable `routing-v3` augmented baselines, reporting the 30 provided and 16 counterfactual slices separately.
