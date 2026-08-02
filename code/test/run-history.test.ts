@@ -135,6 +135,38 @@ test("event reader tolerates only a truncated final JSONL line", async (t) => {
   await assert.rejects(readRunEvents(eventsPath), /Invalid event line 1/);
 });
 
+test("event reader preserves pre-v3 reasons without weakening current output limits", async (t) => {
+  const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-legacy-reason-"));
+  t.after(() => rm(temporaryRoot, { recursive: true, force: true }));
+  const eventsPath = path.join(temporaryRoot, "events.jsonl");
+  await writeFile(
+    eventsPath,
+    [
+      { type: "run_started", sequence: 1, timestamp: new Date().toISOString() },
+      {
+        type: "case_succeeded",
+        sequence: 2,
+        timestamp: new Date().toISOString(),
+        messageId: "sample_msg_legacy",
+        modality: "text",
+        attempt: 1,
+        durationMs: 1,
+        decision: {
+          action: "digest",
+          messageType: "unknown",
+          reason: "x".repeat(300),
+          confidence: 0.5,
+          evidenceMessageIds: [],
+        },
+        rawMessageType: "unknown",
+        usedUnknownFallback: false,
+      },
+    ].map((event) => JSON.stringify(event)).join("\n") + "\n",
+    "utf8",
+  );
+  assert.equal((await readRunEvents(eventsPath)).length, 2);
+});
+
 test("emits output only from a valid successful run on the current dataset", async (t) => {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "message-router-output-"));
   t.after(() => rm(temporaryRoot, { recursive: true, force: true }));

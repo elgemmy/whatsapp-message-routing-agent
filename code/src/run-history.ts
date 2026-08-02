@@ -162,6 +162,12 @@ const CaseFailedEventSchema = z
     metadata: CallMetadataSchema.optional(),
   })
   .strict();
+// Older immutable routing-v2 journals allowed reasons up to 400 characters.
+// New provider/output paths enforce 200, but history rebuilding must remain
+// backward-compatible with those already-paid artifacts.
+const StoredDecisionSchema = DecisionSchema.extend({
+  reason: z.string().trim().min(1).max(400),
+});
 const CaseSucceededEventSchema = z
   .object({
     type: z.literal("case_succeeded"),
@@ -171,7 +177,7 @@ const CaseSucceededEventSchema = z
     modality: ModalitySchema,
     attempt: z.number().int().positive(),
     durationMs: z.number().int().nonnegative(),
-    decision: DecisionSchema,
+    decision: StoredDecisionSchema,
     rawMessageType: z.string(),
     usedUnknownFallback: z.boolean(),
     metadata: CallMetadataSchema.optional(),
