@@ -10,6 +10,7 @@ import {
 import { buildContext, type RoutingContext } from "../src/data.js";
 import type { Decision } from "../src/domain.js";
 import {
+  boundProviderReason,
   classifyOpenRouterError,
   createOpenRouterRoutingProvider,
 } from "../src/providers/openrouter.js";
@@ -424,6 +425,26 @@ test("provider schema stays structural while local decision bounds remain strict
   };
   assert.equal(ProviderRoutingDecisionSchema.safeParse(structurallyValid).success, true);
   assert.equal(RoutingDecisionOutputSchema.safeParse(structurallyValid).success, false);
+});
+
+test("provider reasons are bounded deterministically without weakening local validation", () => {
+  const longReason =
+    "A concrete and grounded explanation based only on supplied message context and relevant history that intentionally exceeds the submission character boundary while remaining safe to shorten at a word boundary for the final CSV output.";
+  const bounded = boundProviderReason(longReason);
+  assert.ok(longReason.length > 200);
+  assert.ok(bounded.length <= 200);
+  assert.match(bounded, /\.$/);
+  assert.equal(boundProviderReason("  A short reason.  "), "A short reason.");
+  assert.equal(
+    RoutingDecisionOutputSchema.safeParse({
+      action: "digest",
+      messageType: "personal",
+      reason: bounded,
+      confidence: 0.8,
+      evidenceMessageIds: [],
+    }).success,
+    true,
+  );
 });
 
 test("routing prompt asks for useful bounded evidence and a 200-character reason", () => {

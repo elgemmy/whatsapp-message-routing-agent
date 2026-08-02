@@ -15,6 +15,7 @@ import {
 } from "ai";
 import { ZodError } from "zod";
 import type { RoutingContext } from "../data.js";
+import { MAX_REASON_CHARACTERS } from "../domain.js";
 import {
   buildRoutingMessages,
   ProviderRoutingDecisionSchema,
@@ -170,6 +171,22 @@ export type ReasoningEffort =
   | "minimal"
   | "none";
 
+export function boundProviderReason(reason: string): string {
+  const trimmed = reason.trim();
+  if (trimmed.length <= MAX_REASON_CHARACTERS) return trimmed;
+
+  const candidate = trimmed.slice(0, MAX_REASON_CHARACTERS - 1);
+  const lastSpace = candidate.lastIndexOf(" ");
+  const cutoff =
+    lastSpace >= Math.floor(MAX_REASON_CHARACTERS * 0.6)
+      ? lastSpace
+      : candidate.length;
+  const stem = candidate
+    .slice(0, cutoff)
+    .replace(/[\s,;:.!?-]+$/u, "");
+  return `${stem}.`;
+}
+
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -279,7 +296,11 @@ export function createOpenRouterRoutingProvider(
       }
       let rawDecision: unknown;
       try {
-        rawDecision = RoutingDecisionOutputSchema.parse(result.output);
+        const structuralDecision = ProviderRoutingDecisionSchema.parse(result.output);
+        rawDecision = RoutingDecisionOutputSchema.parse({
+          ...structuralDecision,
+          reason: boundProviderReason(structuralDecision.reason),
+        });
       } catch (error) {
         throw {
           openRouterFailure: error,
