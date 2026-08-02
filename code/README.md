@@ -22,7 +22,7 @@ OPENROUTER_API_KEY=...
 # OPENROUTER_TRANSCRIPTION_MODEL=x-ai/grok-stt-1.0
 ```
 
-With no overrides, routing uses `anthropic/claude-opus-5` at Medium reasoning and transcription uses `x-ai/grok-stt-1.0`. Resolution is explicit CLI option, then environment variable, then code default. For example, `--model` overrides `OPENROUTER_MODEL`, while `--transcription-model` overrides `OPENROUTER_TRANSCRIPTION_MODEL`. The resolved models and reasoning setting are pinned in every run manifest. Use a new run ID when changing one, and confirm current capabilities and pricing through OpenRouter before a paid run.
+With no overrides, routing uses `anthropic/claude-opus-5` at High reasoning and transcription uses `x-ai/grok-stt-1.0`. Resolution is explicit CLI option, then environment variable, then code default. For example, `--model` overrides `OPENROUTER_MODEL`, while `--transcription-model` overrides `OPENROUTER_TRANSCRIPTION_MODEL`. The resolved models and reasoning setting are pinned in every run manifest. Use a new run ID when changing one, and confirm current capabilities and pricing through OpenRouter before a paid run.
 
 The provider-facing structured-output schema intentionally declares only the object shape and action enum. Complete reason, confidence, evidence-count, normalization, and evidence-allowlist checks still run locally with Zod before a case can succeed. This keeps the same validated output contract across providers whose strict JSON Schema subsets differ.
 
@@ -73,7 +73,7 @@ This bounded smoke covers text and image cases across all actions, group/busines
 
 Voice notes use one bounded OpenRouter speech-to-text call before the primary router. The default is `x-ai/grok-stt-1.0`; override it with `OPENROUTER_TRANSCRIPTION_MODEL` or `--transcription-model`. Grok is the complete-sample default because the dataset contains both MP3 and M4A audio: Qwen remains a valid opt-in experiment for supported formats, but its OpenRouter endpoint rejected the sample M4A file. The append-only journal records each transcript, detected format, audio hash, model identity, duration, and reported usage before routing, so a routing retry or resumed run reuses the transcript instead of rebilling STT. Audio bytes are never sent to the primary router.
 
-Routing defaults to OpenRouter reasoning effort `medium`. Override it with `--reasoning-effort`; run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. Prompt `routing-v5` is self-contained in `src/routing.ts` and applies explicit independent type/action policies, conservative tie-breakers, input grounding, a 200-character reason limit, and up to 12 materially useful evidence IDs without padding. All output limits are enforced locally.
+Routing defaults to OpenRouter reasoning effort `high`. Override it with `--reasoning-effort`; run manifests bind that setting, the 8,000-token output ceiling, prompt version, and STT model, so a resume rejects configuration drift. Prompt `routing-v5` is self-contained in `src/routing.ts` and applies explicit independent type/action policies, conservative tie-breakers, input grounding, a 200-character reason limit, and up to 12 materially useful evidence IDs without padding. All output limits are enforced locally.
 
 Effort is part of manifest identity, so never change it while resuming a run.
 

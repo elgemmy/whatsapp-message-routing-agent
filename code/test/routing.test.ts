@@ -346,7 +346,7 @@ test("RoutingProvider exposes only raw decision and bounded metadata", async () 
   assert.equal("requestBody" in (result.metadata ?? {}), false);
 });
 
-test("OpenRouter routing defaults to Medium reasoning through the adapter", async () => {
+test("OpenRouter routing defaults to High reasoning through the adapter", async () => {
   const index = await indexPromise;
   const context = buildContext(index, index.dataset.samples[0]!);
   let requestBody: Record<string, unknown> | undefined;
@@ -396,7 +396,7 @@ test("OpenRouter routing defaults to Medium reasoning through the adapter", asyn
     confidence: 0.9,
     evidenceMessageIds: [],
   });
-  assert.deepEqual(requestBody?.reasoning, { effort: "medium", exclude: true });
+  assert.deepEqual(requestBody?.reasoning, { effort: "high", exclude: true });
   assert.equal(requestBody?.max_tokens, 8_000);
   const serializedRequest = JSON.stringify(requestBody);
   for (const unsupportedKeyword of [
@@ -409,7 +409,7 @@ test("OpenRouter routing defaults to Medium reasoning through the adapter", asyn
     assert.equal(serializedRequest.includes(unsupportedKeyword), false);
   }
   assert.deepEqual(provider.settings, {
-    reasoningEffort: "medium",
+    reasoningEffort: "high",
     maxOutputTokens: 8_000,
     temperature: null,
   });

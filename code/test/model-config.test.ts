@@ -14,7 +14,7 @@ test("uses evaluator-safe hardcoded model defaults", () => {
   });
   assert.equal(DEFAULT_ROUTING_MODEL, "anthropic/claude-opus-5");
   assert.equal(DEFAULT_TRANSCRIPTION_MODEL, "x-ai/grok-stt-1.0");
-  assert.equal(DEFAULT_REASONING_EFFORT, "medium");
+  assert.equal(DEFAULT_REASONING_EFFORT, "high");
 });
 
 test("environment values override each model default independently", () => {

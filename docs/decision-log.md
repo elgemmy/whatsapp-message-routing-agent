@@ -217,3 +217,11 @@ Status: accepted for the final Opus-only validation and target run
 - Make Opus 5 with Medium reasoning and Grok STT the self-contained code defaults. Keep CLI and environment model overrides for evaluator portability, and pin the resolved configuration in resumable manifests.
 - The runtime prompt is compiled into `code/src/routing.ts`; the policy documents are human reference only. A packaged `code/` directory must not require `docs/` or any other repository source.
 - Interpret v5 label deltas carefully: unfamiliarity alone no longer implies unknown/spam/scam, event precedes personal, and legitimate time-sensitive payments remain payment. The curated labels remain indicative rather than policy authority.
+
+## 2026-08-02 — Restore High reasoning for final validation
+
+Status: user-directed replacement of the Medium submission setting
+
+- Stop the in-progress Medium target run after 13/110 successful decisions and preserve its partial journal. Do not resume or publish it as the submission run.
+- Restore Opus High as both the CLI default and provider fallback. Keep routing-v5, Grok STT, the 8,000-token ceiling, strict local validation, retryable Zod handling, and deterministic 200-character reason bounding unchanged.
+- Run a fresh complete High sample validation before starting any fresh High target run. Use distinct run IDs so Medium and High artifacts cannot be mixed.

@@ -1,6 +1,6 @@
 export const DEFAULT_ROUTING_MODEL = "anthropic/claude-opus-5";
 export const DEFAULT_TRANSCRIPTION_MODEL = "x-ai/grok-stt-1.0";
-export const DEFAULT_REASONING_EFFORT = "medium" as const;
+export const DEFAULT_REASONING_EFFORT = "high" as const;
 
 type ModelConfigInput = {
   routingCli?: string | undefined;
